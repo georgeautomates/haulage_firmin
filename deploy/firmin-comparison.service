@@ -1,0 +1,13 @@
+[Unit]
+Description=Firmin — daily Slack comparison report
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/firmin
+EnvironmentFile=/opt/firmin/.env
+ExecStart=/opt/firmin/.venv/bin/python scripts/slack_comparison_report.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=firmin-comparison

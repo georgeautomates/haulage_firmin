@@ -56,12 +56,17 @@ if [ "$MISSING" = "1" ]; then
     echo "    scp config/gmail_token.json root@YOUR_VPS_IP:/opt/firmin/config/"
 fi
 
-# 5. Install systemd service
-echo "[5/6] Installing systemd service..."
+# 5. Install systemd service + comparison timer
+echo "[5/6] Installing systemd service and comparison timer..."
 cp deploy/firmin.service /etc/systemd/system/firmin.service
+cp deploy/firmin-comparison.service /etc/systemd/system/firmin-comparison.service
+cp deploy/firmin-comparison.timer /etc/systemd/system/firmin-comparison.timer
 systemctl daemon-reload
 systemctl enable firmin
+systemctl enable firmin-comparison.timer
+systemctl start firmin-comparison.timer
 echo "  Service enabled (will start on boot)."
+echo "  Comparison timer enabled (runs daily at 8am UK time)."
 
 # 6. Done
 echo ""
@@ -73,3 +78,4 @@ echo "  2. Upload credential files to /opt/firmin/config/ if missing"
 echo "  3. Start the agent: systemctl start firmin"
 echo "  4. Check status:    systemctl status firmin"
 echo "  5. Watch logs:      journalctl -u firmin -f"
+echo "  6. Check timer:     systemctl list-timers firmin-comparison.timer"
