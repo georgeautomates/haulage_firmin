@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-03-25 (session 2)_
+_Last updated: 2026-03-25 (session 2 — end of day)_
 
 ## What this project is
 
@@ -77,6 +77,12 @@ The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and runni
 - Changed from `gmail.readonly` → `gmail.modify` in both `gmail.py` and `setup_gmail_oauth.py`
 - `mark_as_read()` method added to `GmailClient` — called after each email is processed
 - Token regenerated with new scope (old token revoked at myaccount.google.com/permissions first)
+
+#### Comparison timer
+- systemd timer: `firmin-comparison.timer` + `firmin-comparison.service`
+- Runs daily at 8am UK time (BST/GMT auto-handled via `TimeZone=Europe/London`)
+- Posts comparison report to Slack
+- First run: 2026-03-26 08:00 UTC
 
 #### Deployment workflow (for future updates)
 1. Make changes locally
@@ -213,7 +219,7 @@ LOG_LEVEL=INFO
 
 - **Production scheduling** — ✅ DONE. Running as systemd service on Hostinger VPS.
 - **Slack notifications** — ✅ DONE. Batch summary per email + on-demand comparison report.
-- **Comparison scheduling** — slack_comparison_report.py is manual only, not yet scheduled as a cron job
+- **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — Playwright scrape of Proteo back into Verification tab (currently manual/separate process)
@@ -245,3 +251,8 @@ LOG_LEVEL=INFO
 - Webhook URL is in `.env` as `SLACK_WEBHOOK_URL`
 - If not set, Slack notifications are silently skipped (no error)
 - Comparison report requires Verification tab to have data — if empty, reports 0 matched jobs
+
+### Kemsley Depot collection issue (open)
+- When PDF has `KEMSLEY DEPOT / DS SMITH RECYCLING / ME10 2TD` as the **collection** address, it matches `DS SMITH - SITTINGBOURNE` — wrong when Kemsley is collection not delivery
+- Needs discussion with George to determine correct behaviour
+- Comparison report data will help quantify the impact
