@@ -13,7 +13,7 @@ from firmin.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
 @dataclass
@@ -69,6 +69,18 @@ class GmailClient:
             if email:
                 emails.append(email)
         return emails
+
+    def mark_as_read(self, message_id: str):
+        service = self._get_service()
+        try:
+            service.users().messages().modify(
+                userId="me",
+                id=message_id,
+                body={"removeLabelIds": ["UNREAD"]},
+            ).execute()
+            logger.debug("Marked message %s as read", message_id)
+        except Exception as e:
+            logger.warning("Failed to mark message %s as read: %s", message_id, e)
 
     def _fetch_message(self, service, message_id: str) -> Optional[EmailMessage]:
         try:

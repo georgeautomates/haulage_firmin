@@ -89,6 +89,7 @@ def _poll(gmail: GmailClient, pipeline: Pipeline, profiles, dedup: DedupStore, q
 
         result = pipeline.process_email(email, profile)
         dedup.mark_email_seen(email.message_id)
+        gmail.mark_as_read(email.message_id)
 
         logger.info(
             "Email %s done — %d jobs total, %d written, %d skipped, %d errors",
