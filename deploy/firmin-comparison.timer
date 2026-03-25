@@ -2,7 +2,8 @@
 Description=Run Firmin comparison report daily at 8am UK time
 
 [Timer]
-OnCalendar=Europe/London 08:00:00
+OnCalendar=*-*-* 08:00:00
+TimeZone=Europe/London
 Persistent=true
 
 [Install]
