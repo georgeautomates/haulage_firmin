@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-03-25_
+_Last updated: 2026-03-25 (session 2)_
 
 ## What this project is
 
@@ -16,6 +16,7 @@ Reference n8n workflow: `C:\Users\USERAS\Downloads\St Regis Fiber - Shadow Mode.
 ```
 firmin/
 ├── agent.py              — main poll loop (entry point: python -m firmin.agent)
+│                           marks emails as read after processing (gmail.modify scope)
 ├── pipeline.py           — per-email orchestrator
 ├── scoring.py            — confidence scoring (GREEN/YELLOW/RED)
 ├── clients/
@@ -23,7 +24,8 @@ firmin/
 │   ├── pdf.py            — PDF text extraction (pdfplumber + PyMuPDF fallback)
 │   ├── ai.py             — AI extraction per job (OpenAI direct)
 │   ├── supabase.py       — 3-tier location lookup (override → cache → fuzzy)
-│   └── sheets.py         — Google Sheets writer (gspread)
+│   ├── sheets.py         — Google Sheets writer (gspread)
+│   └── slack.py          — Slack webhook client (batch summary + comparison report)
 ├── profiles/
 │   └── loader.py         — YAML client profile loader + email matcher
 └── utils/
@@ -36,21 +38,54 @@ config/
     └── st_regis_fibre.yaml  — St Regis Fibre A/C client profile
 
 scripts/
-├── setup_gmail_oauth.py     — one-time Gmail OAuth setup
-├── test_pdf_pipeline.py     — smoke test: PDF + AI extraction
-├── test_supabase.py         — smoke test: Supabase location lookup
-├── test_e2e.py              — end-to-end test: PDF → pipeline → Sheets (single job)
-├── run_comparison.py        — comparison: Actual Entry vs Verification tab
-└── debug_comparison.py      — debug: prints job number overlap between sheets
+├── setup_gmail_oauth.py        — one-time Gmail OAuth setup (scope: gmail.modify)
+├── test_pdf_pipeline.py        — smoke test: PDF + AI extraction
+├── test_supabase.py            — smoke test: Supabase location lookup
+├── test_e2e.py                 — end-to-end test: PDF → pipeline → Sheets (single job)
+├── run_comparison.py           — comparison: Actual Entry vs Verification tab (interactive)
+├── slack_comparison_report.py  — posts comparison report to Slack (on-demand)
+└── debug_comparison.py         — debug: prints job number overlap between sheets
+
+deploy/
+├── firmin.service   — systemd service unit file
+└── setup_vps.sh     — one-time VPS setup script (clone, venv, service install)
 ```
 
 ---
 
-## Current status — PRODUCTION RUNNING
+## Current status — PRODUCTION RUNNING ON VPS
 
-The agent is running and writing to Google Sheets. All components are working.
+The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
 
-### What's been completed this session (2026-03-25)
+### What's been completed this session (2026-03-25, session 2)
+
+#### Slack notifications
+- `firmin/clients/slack.py` — webhook client using `urllib` (no extra dependencies)
+- Batch summary posted after each email: total jobs, GREEN/YELLOW/RED breakdown, per-job line with collection → delivery, price, score
+- Comparison report posted on demand via `scripts/slack_comparison_report.py`
+- `SLACK_WEBHOOK_URL` added to `.env` and `.env.example`
+- Webhook: `https://hooks.slack.com/services/T0ADXEXQP8W/B0APKMRK8JU/...` (Order Test app)
+
+#### VPS deployment (Hostinger, Ubuntu 24.04)
+- Repo pushed to `https://github.com/georgeautomates/haulage_firmin`
+- Deployed to `/opt/firmin` via `git clone` + `deploy/setup_vps.sh`
+- Python 3.12.3 venv at `/opt/firmin/.venv`
+- systemd service `firmin.service` — enabled, starts on boot
+- Credentials uploaded via SCP: `.env`, `gmail_token.json`, `gmail_credentials.json`, `service_account.json`
+
+#### Gmail scope fix
+- Changed from `gmail.readonly` → `gmail.modify` in both `gmail.py` and `setup_gmail_oauth.py`
+- `mark_as_read()` method added to `GmailClient` — called after each email is processed
+- Token regenerated with new scope (old token revoked at myaccount.google.com/permissions first)
+
+#### Deployment workflow (for future updates)
+1. Make changes locally
+2. `git add . && git commit -m "..." && git push`
+3. On VPS: `cd /opt/firmin && git pull && systemctl restart firmin`
+
+---
+
+### What's been completed in session 1 (2026-03-25)
 
 #### Infrastructure
 - Fixed Supabase DSN — old hostname `db.ttwyttggzmgnkgcmrebq.supabase.co` replaced with pooler `aws-1-eu-west-2.pooler.supabase.com`, username format changed to `postgres.ttwyttggzmgnkgcmrebq`
@@ -155,6 +190,7 @@ SUPABASE_POSTGRES_DSN=set ✓ (pooler endpoint)
 GMAIL_TOKEN_PATH=config/gmail_token.json ✓
 GMAIL_CREDENTIALS_PATH=config/gmail_credentials.json ✓
 GOOGLE_SERVICE_ACCOUNT_PATH=config/service_account.json ✓
+SLACK_WEBHOOK_URL=set ✓
 POLL_INTERVAL_SECONDS=60
 LOG_LEVEL=INFO
 ```
@@ -175,10 +211,37 @@ LOG_LEVEL=INFO
 
 ## What's NOT done yet
 
-- **Production scheduling** — agent not yet set up as a Windows service or Task Scheduler job. Currently run manually.
-- **Comparison scheduling** — run_comparison.py is manual only, not automated
+- **Production scheduling** — ✅ DONE. Running as systemd service on Hostinger VPS.
+- **Slack notifications** — ✅ DONE. Batch summary per email + on-demand comparison report.
+- **Comparison scheduling** — slack_comparison_report.py is manual only, not yet scheduled as a cron job
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — Playwright scrape of Proteo back into Verification tab (currently manual/separate process)
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
+
+---
+
+## Known challenges & gotchas
+
+### VPS deployment
+- `.env` must be uploaded manually via SCP — it is gitignored and never in the repo
+- Gmail token (`gmail_token.json`) must also be uploaded manually — it is gitignored
+- If the Gmail token expires or is revoked: delete it locally, run `python scripts/setup_gmail_oauth.py` (paste URL into correct browser profile), re-upload via SCP, restart service
+- Gmail scope must be `gmail.modify` (not `readonly`) — token must be regenerated if scope changes
+- VPS `.env` previously got overwritten with `.env.example` template during SCP — always verify with `grep OPENAI /opt/firmin/.env` after uploading
+
+### Dedup / reprocessing
+- If the agent fails mid-run (e.g. 401 AI errors), emails get marked as seen in dedup but nothing is written to the sheet
+- To reprocess: `sqlite3 /opt/firmin/firmin.db "DELETE FROM processed_emails; DELETE FROM processed_orders;"`
+- Gmail backlog: 50 emails were processed with errors before the API key was correctly set — these are now marked as read in Gmail and in dedup, and are gone from the backlog
+
+### Gmail query
+- Query: `subject:@dssmith.com is:unread has:attachment`
+- DS Smith emails are **forwarded**, so the sender domain `@dssmith.com` appears in the subject line, not the From field
+- PDF filenames are `GRIGGS_Q...` — this is Alan Firmin's internal reference name for DS Smith jobs, not a different client
+
+### Slack
+- Webhook URL is in `.env` as `SLACK_WEBHOOK_URL`
+- If not set, Slack notifications are silently skipped (no error)
+- Comparison report requires Verification tab to have data — if empty, reports 0 matched jobs
