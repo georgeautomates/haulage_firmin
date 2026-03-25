@@ -1,0 +1,38 @@
+client_id: st_regis_fibre
+display_name: "St Regis - Fibre A/C"
+
+# Email matching — all conditions must pass for this profile to apply
+email_filters:
+  subject_contains:
+    - "@dssmith.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+# Job number regex patterns for the pre-pass (25XXXXX or 26XXXXX)
+job_number_patterns:
+  - "\\b2[56]\\d{5}\\b"
+
+# Fields hardcoded for this client — never extracted from PDF
+defaults:
+  client_name: "St Regis - Fibre A/C"
+  business_type: "Artic Reloads"
+  service: "Baled Waste/Recycling"
+  pallets: 26
+  spaces: 26
+  weight: 0
+  goods_type: "Baled Waste"
+
+# Google Sheets output target
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+# Known location overrides — postcode: exact Description from Location Points table
+# These bypass fuzzy matching entirely. Add any postcode that always maps to one location.
+known_locations:
+  "ME10 2TD": "DS SMITH - SITTINGBOURNE"
+
+# Confidence scoring thresholds (0-100)
+confidence_thresholds:
+  green: 80
+  yellow: 50    # below 50 = RED

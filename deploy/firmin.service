@@ -1,0 +1,18 @@
+[Unit]
+Description=Firmin — DS Smith booking email processing agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/firmin
+EnvironmentFile=/opt/firmin/.env
+ExecStart=/opt/firmin/.venv/bin/python -m firmin.agent
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=firmin
+
+[Install]
+WantedBy=multi-user.target

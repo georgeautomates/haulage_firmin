@@ -1,0 +1,31 @@
+# Secrets — never commit these
+.env
+config/gmail_token.json
+config/gmail_credentials.json
+config/service_account.json
+
+# Local database (deduplication store)
+firmin.db
+
+# Output files
+output/
+logs/*.jsonl
+logs/*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

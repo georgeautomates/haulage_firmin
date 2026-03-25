@@ -1,0 +1,33 @@
+# AI — OpenRouter with OpenAI models now; swap to Anthropic later via .env only
+openai>=1.30.0
+
+# Google APIs
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0
+gspread>=6.0.0
+
+# PDF extraction
+pdfplumber>=0.10.0
+PyMuPDF>=1.23.0
+
+# Database (Supabase via Postgres)
+psycopg2-binary>=2.9.0
+
+# Fuzzy matching
+rapidfuzz>=3.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Config & environment
+python-dotenv>=1.0.0
+PyYAML>=6.0.0
+
+# JSON schema validation
+jsonschema>=4.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.0.0

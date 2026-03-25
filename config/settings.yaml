@@ -1,0 +1,13 @@
+poll_interval_seconds: 60
+max_retries: 3
+retry_backoff_base: 2
+
+# Paths (relative to project root)
+failed_writes_path: "logs/failed_writes.jsonl"
+dedup_db_path: "firmin.db"
+output_dir: "output/orders"
+clients_dir: "config/clients"
+
+# Location matching
+location_postcode_fallback: true        # try partial postcode if exact match returns 0 results
+location_min_similarity: 0.4            # minimum similarity score to accept a fuzzy match
