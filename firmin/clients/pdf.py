@@ -24,11 +24,11 @@ class PdfExtractResult:
 
 
 def extract_pdf(data: bytes) -> PdfExtractResult:
-    """Extract text from PDF bytes. Tries pdfplumber first, falls back to PyMuPDF."""
-    text = _extract_with_pdfplumber(data)
+    """Extract text from PDF bytes. Tries PyMuPDF first, falls back to pdfplumber."""
+    text = _extract_with_pymupdf(data)
     if not text or len(text.strip()) < 50:
-        logger.warning("pdfplumber returned little text, trying PyMuPDF")
-        text = _extract_with_pymupdf(data)
+        logger.warning("PyMuPDF returned little text, trying pdfplumber")
+        text = _extract_with_pdfplumber(data)
 
     page_count = _count_pages(data)
     job_numbers = list(dict.fromkeys(re.findall(r'\b(2[56]\d{5})\b', text)))
