@@ -34,9 +34,10 @@ Rules:
 - delivery_address: street address lines only for the DELIVERY address, NOT including the org name or postcode. Do not mix in collection address lines.
 - collection_postcode: the postcode belonging to the collection address (appears at the end of the collection address block)
 - delivery_postcode: the postcode belonging to the delivery address (appears at the end of the delivery address block)
-- order_number: the PO number starting with "PO-" (e.g. PO-0804230). This is the purchase order number.
-- customer_ref: any reference number on the line AFTER the PO number (e.g. SKM-S17211, 0700-1300, 1478638). Empty string if not present.
-- work_type: the short code after the price (X, MIS, KWH, PLA etc). Empty string if not present.
+- price: the value starting with £ in the Price/Order/Ref column (e.g. £300.00, £490.00). Always look for the £ symbol — never use a plain number as the price.
+- order_number: the order/PO reference in the Price/Order/Ref column. It may start with "PO-" (e.g. PO-0804230) or may be a plain number (e.g. 1838735). It is the first reference on its own line before or after the £ price.
+- customer_ref: any additional reference on the line after the order number (e.g. SKM-S17211, 0700-1300, 1479493). Empty string if not present.
+- work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, TE3 etc). Empty string if not present.
 - All fields must be filled with actual values from the text, never with placeholder descriptions.
 
 Return ONLY this JSON with no markdown, no backticks, no explanation:
