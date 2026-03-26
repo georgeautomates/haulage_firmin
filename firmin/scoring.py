@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -11,6 +11,7 @@ class ScoredOrder:
     signal5_dates: int
     composite_score: int
     status: str  # GREEN / YELLOW / RED
+    failure_reasons: list[str] = field(default_factory=list)
 
 
 REQUIRED_FIELDS = [
@@ -71,6 +72,22 @@ def score_order(order: dict) -> ScoredOrder:
     else:
         status = "RED"
 
+    failure_reasons = []
+    if signal1 < 100:
+        failure_reasons.append("unknown client name")
+    if signal2 < 100:
+        missing = [f for f in REQUIRED_FIELDS if not str(order.get(f, "")).strip()]
+        failure_reasons.append(f"missing fields: {', '.join(missing)}")
+    if signal3 == 0:
+        failure_reasons.append("collection point unmatched")
+    if signal4 == 0:
+        failure_reasons.append(f"price out of range ({price_str})")
+    if signal5 < 100:
+        if not col_date_ok:
+            failure_reasons.append(f"invalid collection date ({order.get('collection_date', '')})")
+        if not del_date_ok:
+            failure_reasons.append(f"invalid delivery date ({order.get('delivery_date', '')})")
+
     return ScoredOrder(
         signal1_customer=signal1,
         signal2_completeness=signal2,
@@ -79,4 +96,5 @@ def score_order(order: dict) -> ScoredOrder:
         signal5_dates=signal5,
         composite_score=composite,
         status=status,
+        failure_reasons=failure_reasons,
     )

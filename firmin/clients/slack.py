@@ -77,6 +77,9 @@ class SlackClient:
                 f"*{o.get('price', '—')}*  "
                 f"_(score: {o.get('composite_score', '—')})_"
             )
+            reasons = o.get("failure_reasons", [])
+            if reasons and o.get("status") in ("YELLOW", "RED"):
+                line += f"\n    :warning: {' · '.join(reasons)}"
             job_lines.append(line)
 
         blocks = [
@@ -108,6 +111,7 @@ class SlackClient:
         only_actual: int,
         only_verify: int,
         field_stats: dict[str, dict],  # {field_name: {match: int, total: int}}
+        mismatch_examples: dict[str, list] | None = None,  # {field: [(job, ours, proteo), ...]}
         spreadsheet_url: str = "",
     ) -> bool:
         pct = full_match / max(total_matched, 1) * 100
@@ -145,6 +149,24 @@ class SlackClient:
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": "*Field breakdown:*\n" + "\n".join(field_lines)},
             })
+
+        if mismatch_examples:
+            example_lines = []
+            for field, examples in mismatch_examples.items():
+                if not examples:
+                    continue
+                field_pct = field_stats[field]["match"] / max(field_stats[field]["total"], 1) * 100
+                if field_pct >= 90:
+                    continue  # only show fields with notable mismatches
+                example_lines.append(f"*{field} mismatches:*")
+                for job, ours, proteo in examples:
+                    example_lines.append(f"  `{job}` — ours: _{ours}_ · Proteo: _{proteo}_")
+            if example_lines:
+                blocks.append({"type": "divider"})
+                blocks.append({
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": "\n".join(example_lines)},
+                })
 
         if spreadsheet_url:
             blocks.append({

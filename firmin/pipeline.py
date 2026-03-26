@@ -28,6 +28,11 @@ class OrderResult:
     collection_point: str = "—"
     delivery_point: str = "—"
     price: str = "—"
+    failure_reasons: list = None
+
+    def __post_init__(self):
+        if self.failure_reasons is None:
+            self.failure_reasons = []
 
 
 @dataclass
@@ -110,6 +115,7 @@ class Pipeline:
                     "collection_point": getattr(o, "collection_point", "—"),
                     "delivery_point": getattr(o, "delivery_point", "—"),
                     "price": getattr(o, "price", "—"),
+                    "failure_reasons": getattr(o, "failure_reasons", []),
                 }
                 for o in result.orders
             ]
@@ -234,6 +240,7 @@ class Pipeline:
                 collection_point=collection_point,
                 delivery_point=delivery_point,
                 price=extracted.price or "—",
+                failure_reasons=scored.failure_reasons,
             )
         except Exception as e:
             logger.error("Failed to write job %s to sheet: %s", job_number, e)
@@ -247,4 +254,5 @@ class Pipeline:
                 collection_point=collection_point,
                 delivery_point=delivery_point,
                 price=extracted.price or "—",
+                failure_reasons=scored.failure_reasons,
             )
