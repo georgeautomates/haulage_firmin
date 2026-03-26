@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-03-25 (session 2 — end of day)_
+_Last updated: 2026-03-26 (session 3 — end of day)_
 
 ## What this project is
 
@@ -56,6 +56,39 @@ deploy/
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-03-26, session 3)
+
+#### Slack failure reasons (scoring.py, pipeline.py, slack.py)
+- `ScoredOrder` now has `failure_reasons: list[str]` — populated for any signal that fails
+- Plain-English reasons: `"collection point unmatched"`, `"missing fields: X"`, `"price out of range"`, `"invalid collection/delivery date"`
+- `OrderResult` carries `failure_reasons` through from scoring
+- Batch Slack notification: YELLOW/RED job lines now show `⚠️ reason · reason` underneath
+- Comparison report: now accepts `mismatch_examples` — shows up to 3 real job-level examples per failing field (ours vs Proteo), only for fields below 90% match rate
+
+#### PDF extractor fix (pdf.py)
+- Switched primary extractor from pdfplumber → PyMuPDF
+- pdfplumber was mangling multi-column price fields — e.g. `£490.00` → `£4` for job `2562808`
+- PyMuPDF extracts the same PDF cleanly with price on its own line
+- pdfplumber retained as fallback if PyMuPDF returns < 50 chars
+
+#### AI prompt fixes (ai.py)
+- `price`: now explicitly instructed to look for `£` symbol — never use a plain number as price
+- `order_number`: now accepts numbers without `PO-` prefix (e.g. `1838735`)
+- `work_type`: clarified it appears on the same line as the `£` price (catches codes like `TE3`)
+- `customer_ref`: clarified it appears after the order number line
+
+#### Duplicate sheet rows — diagnosed
+- Jobs like `2561003` had 3 rows in the sheet but only 1 entry in `firmin.db`
+- Root cause: rows were written locally before VPS deployment; VPS started with empty DB and re-processed
+- Dedup is working correctly — this is a one-time legacy issue, not a recurring bug
+- Cleanup of duplicate rows still pending
+
+#### Staff communication drafted
+- Message drafted for DS Smith booking form staff explaining the location matching problem in plain English
+- Focuses on Kemsley/Sittingbourne area — multiple sites share ME10 2TD postcode
+- Asks staff for examples: "when form says X, Proteo name is Y"
+- Boss confirmed: Paul approved speaking to anyone on the team
 
 ### What's been completed this session (2026-03-25, session 2)
 
@@ -220,6 +253,8 @@ LOG_LEVEL=INFO
 - **Production scheduling** — ✅ DONE. Running as systemd service on Hostinger VPS.
 - **Slack notifications** — ✅ DONE. Batch summary per email + on-demand comparison report.
 - **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
+- **Duplicate sheet row cleanup** — legacy rows from local test runs before VPS deployment, needs one-time manual cleanup
+- **Kemsley location mapping** — awaiting response from DS Smith staff member re: correct Proteo names
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — Playwright scrape of Proteo back into Verification tab (currently manual/separate process)
