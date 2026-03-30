@@ -71,6 +71,37 @@ def normalise(val: str, field: str = "") -> str:
         }
         if v in kemsley_aliases:
             v = "kemsley"
+        delivery_aliases = {
+            # DS Smith Devizes — with/without Ltd/Packaging
+            "ds smith packaging ltd - devizes": "ds smith devizes",
+            "d s smith - devizes":              "ds smith devizes",
+            "ds smith - devizes":               "ds smith devizes",
+            # SAICA Newport — various formats
+            "newport (saica)":  "saica newport",
+            "saica":            "saica newport",
+            "saica - newport":  "saica newport",
+            # Welton Bibby & Baron — with/without Ltd
+            "welton bibby & baron - westbury":     "welton bibby baron westbury",
+            "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+        }
+        v = delivery_aliases.get(v, v)
+
+    # Normalise collection point: treat known name variants as equivalent
+    if field == "collection_point":
+        collection_aliases = {
+            # Ipswich / Masons Landfill — same site, different name formats
+            "ipswich (masons landfill) -": "masons landfill ipswich",
+            "mason landfill - ipswich":    "masons landfill ipswich",
+            "masons landfill - ipswich":   "masons landfill ipswich",
+            # Enva / Envea — same company, spelling variant
+            "envea  - nottingham":         "enva nottingham",
+            "enva england ltd - nottingham": "enva nottingham",
+            "envea - nottingham":          "enva nottingham",
+            # Welton Bibby & Baron — with/without Ltd
+            "welton bibby & baron - westbury":     "welton bibby baron westbury",
+            "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+        }
+        v = collection_aliases.get(v, v)
     # Collapse multiple spaces
     v = re.sub(r'\s+', ' ', v)
     return v
@@ -96,37 +127,61 @@ def main():
     verify_rows = sheet_to_dicts(verify_ws)
     print(f"  {len(verify_rows)} rows")
 
-    # Index both by job number
+    def po_key(order_number: str) -> str:
+        """Normalise PO number: strip PO- prefix, take part before any / suffix, lowercase."""
+        v = order_number.strip().lower()
+        v = re.sub(r'^po-', '', v)
+        v = v.split("/")[0].strip()
+        return v
+
+    # Index actual by job number
     actual_by_job: dict[str, dict] = {}
     for row in actual_rows:
         job = str(row.get("delivery_order_number", "")).strip()
         if job:
             actual_by_job[job] = row
 
+    # Index verification by (job_number, po_key) and also by job_number alone
+    verify_by_job_po: dict[tuple, dict] = {}
     verify_by_job: dict[str, dict] = {}
     for row in verify_rows:
         job = str(row.get("delivery_order_number", "")).strip()
+        po  = po_key(str(row.get("order_number", "")))
         if job:
-            verify_by_job[job] = row
+            verify_by_job_po[(job, po)] = row
+            verify_by_job[job] = row  # last row wins — fallback only
 
-    matched_jobs = sorted(set(actual_by_job) & set(verify_by_job))
-    only_actual  = sorted(set(actual_by_job) - set(verify_by_job))
-    only_verify  = sorted(set(verify_by_job) - set(actual_by_job))
+    # Match: prefer job+PO match, fall back to job-only
+    matched_jobs = []
+    actual_unmatched = []
+    for job, a_row in sorted(actual_by_job.items()):
+        po = po_key(str(a_row.get("order_number", "")))
+        if (job, po) in verify_by_job_po:
+            matched_jobs.append((job, verify_by_job_po[(job, po)], "exact"))
+        elif job in verify_by_job:
+            matched_jobs.append((job, verify_by_job[job], "job_only"))
+        else:
+            actual_unmatched.append(job)
 
-    print(f"\n  Matched jobs:       {len(matched_jobs)}")
+    only_actual = actual_unmatched
+    only_verify = sorted(set(verify_by_job) - set(actual_by_job))
+
+    exact_count    = sum(1 for _, _, m in matched_jobs if m == "exact")
+    job_only_count = sum(1 for _, _, m in matched_jobs if m == "job_only")
+    print(f"\n  Matched jobs:       {len(matched_jobs)} ({exact_count} exact PO match, {job_only_count} job-number only)")
     print(f"  Only in Actual:     {len(only_actual)}")
     print(f"  Only in Verify:     {len(only_verify)}\n")
+
 
     # Build comparison rows
     comparison_rows = []
     stats = {"total": 0, "full_match": 0, "partial": 0, "no_match": 0}
 
-    for job in matched_jobs:
+    for job, v, match_type in matched_jobs:
         a = actual_by_job[job]
-        v = verify_by_job[job]
         stats["total"] += 1
 
-        row = {"job_number": job}
+        row = {"job_number": job, "match_type": match_type}
         field_results = []
 
         # Scored fields — count toward overall_match
@@ -186,14 +241,10 @@ def main():
     # Build headers from first row
     headers = list(comparison_rows[0].keys())
 
-    # Check if sheet has headers; if empty, write them
-    existing = compare_ws.row_values(1)
-    if not existing:
-        compare_ws.append_row(headers, value_input_option="USER_ENTERED")
-        print("  Headers written.")
-
-    # Write all rows
+    # Clear existing content then write fresh
+    compare_ws.clear()
     values = [[str(row.get(h, "")) for h in headers] for row in comparison_rows]
+    compare_ws.append_row(headers, value_input_option="USER_ENTERED")
     compare_ws.append_rows(values, value_input_option="USER_ENTERED")
     print(f"  {len(values)} rows written to '{COMPARE_WS}'.")
     print(f"\nDone. Open sheet: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}")
