@@ -83,6 +83,8 @@ def main():
 
     stats = {"total": 0, "full_match": 0, "partial": 0, "no_match": 0}
     field_stats = {label: {"match": 0, "total": 0} for label, _, _ in COMPARE_FIELDS}
+    # Track mismatch examples per field: {label: [(job, ours, proteo), ...]}
+    mismatch_examples: dict[str, list] = {label: [] for label, _, _ in COMPARE_FIELDS}
 
     for job in matched_jobs:
         a = actual_by_job[job]
@@ -97,6 +99,9 @@ def main():
             field_stats[label]["total"] += 1
             if match:
                 field_stats[label]["match"] += 1
+            else:
+                if len(mismatch_examples[label]) < 3:
+                    mismatch_examples[label].append((job, a_val, v_val))
             field_results.append(match)
 
         matched_count = sum(field_results)
@@ -117,6 +122,7 @@ def main():
         only_actual=len(only_actual),
         only_verify=len(only_verify),
         field_stats=field_stats,
+        mismatch_examples=mismatch_examples,
         spreadsheet_url=SPREADSHEET_URL,
     )
 

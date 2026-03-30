@@ -219,6 +219,9 @@ class Pipeline:
         order["status"] = scored.status
         order["Status"] = scored.status
 
+        # Mark as seen before writing — prevents reprocessing on crash/retry
+        self.dedup.mark_order_seen(job_number, message_id)
+
         # Write to sheet
         try:
             self.sheets.append_row(
@@ -226,7 +229,6 @@ class Pipeline:
                 profile.sheets.worksheet_name,
                 order,
             )
-            self.dedup.mark_order_seen(job_number, message_id)
             logger.info(
                 "Job %s written — %s (score: %d)",
                 job_number, scored.status, scored.composite_score,
@@ -243,7 +245,7 @@ class Pipeline:
                 failure_reasons=scored.failure_reasons,
             )
         except Exception as e:
-            logger.error("Failed to write job %s to sheet: %s", job_number, e)
+            logger.error("SHEET WRITE FAILED for job %s (already marked seen — manual recovery needed): %s", job_number, e)
             return OrderResult(
                 job_number=job_number,
                 status=scored.status,
