@@ -41,6 +41,12 @@ def score_order(order: dict) -> ScoredOrder:
     # Signal 3: collection point matched (25%)
     signal3 = 0 if order.get("collection_point") == "UNMATCHED" else 100
 
+    # Guard: collection same as delivery is likely an extraction error
+    collection_same_as_delivery = (
+        order.get("collection_point")
+        and order.get("collection_point") == order.get("delivery_point")
+    )
+
     # Signal 4: price validity (20%)
     price_str = str(order.get("price") or order.get("rate") or "0")
     price_clean = "".join(c for c in price_str if c.isdigit() or c == ".")
@@ -65,9 +71,9 @@ def score_order(order: dict) -> ScoredOrder:
         + signal5 * 0.10
     )
 
-    if composite >= 90:
+    if composite >= 90 and not collection_same_as_delivery:
         status = "GREEN"
-    elif composite >= 70:
+    elif composite >= 70 or (composite >= 90 and collection_same_as_delivery):
         status = "YELLOW"
     else:
         status = "RED"
@@ -87,6 +93,8 @@ def score_order(order: dict) -> ScoredOrder:
             failure_reasons.append(f"invalid collection date ({order.get('collection_date', '')})")
         if not del_date_ok:
             failure_reasons.append(f"invalid delivery date ({order.get('delivery_date', '')})")
+    if collection_same_as_delivery:
+        failure_reasons.append("collection same as delivery — possible extraction error")
 
     return ScoredOrder(
         signal1_customer=signal1,
