@@ -251,8 +251,8 @@ Known mismatches:
 **Spreadsheet ID:** `1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI`
 
 **Tabs:**
-- `Actual Entry` — agent output (428+ rows as of 2026-03-25)
-- `Verification` — Proteo TMS actual entries scraped by Playwright RPA (459 rows)
+- `Actual Entry` — agent output (243 rows as of 2026-03-30, duplicates cleaned)
+- `Verification` — Proteo TMS actual entries scraped by Playwright RPA (649 rows as of 2026-03-30)
 - `Comparison` — comparison results written by run_comparison.py
 
 **Column notes:**
@@ -281,8 +281,8 @@ LOG_LEVEL=INFO
 
 - PDF: 3 jobs per page, up to 48 jobs per email, one AI call per job
 - Gmail filter: `subject:@dssmith.com is:unread has:attachment`
-- Dedup: SQLite `firmin.db` — tracks processed email message_ids and job numbers
-- Confidence scoring: GREEN ≥80, YELLOW ≥50, RED <50 (per st_regis_fibre.yaml thresholds)
+- Dedup: SQLite `firmin.db` — job marked seen BEFORE sheet write (fixed 2026-03-30)
+- Confidence scoring: GREEN ≥90 (and collection≠delivery), YELLOW ≥70 or collection=delivery, RED <70
 - AI model: direct OpenAI (`OPENAI_API_KEY`), model `gpt-4o-mini`
 - Collection times in PDF = requested time, not actual — will always differ from Proteo
 - Dates in PDF = booking date, not execution date — typically 1 day earlier than Proteo
