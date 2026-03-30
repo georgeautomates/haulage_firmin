@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-03-26 (session 3 — end of day)_
+_Last updated: 2026-03-30 (session 4 — end of day)_
 
 ## What this project is
 
@@ -56,6 +56,47 @@ deploy/
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-03-30, session 4)
+
+#### Dedup race condition fixed (pipeline.py)
+- `mark_order_seen` now fires **before** the sheet write, not after
+- Previously: crash/retry between write and mark caused duplicate rows
+- Sheet write failure now logs "SHEET WRITE FAILED — manual recovery needed"
+
+#### 276 duplicate sheet rows cleaned (scripts/cleanup_duplicate_rows.py)
+- One-time script written to remove legacy duplicates from local test runs
+- Keeps latest `processed_at` row per job number, deletes all earlier ones
+- 519 rows → 243 rows (one per unique job)
+- Script throttles at 1.2s per deletion to avoid Google Sheets rate limit
+
+#### Comparison script overhauled (scripts/run_comparison.py)
+- **Clears tab before writing** — no more row accumulation across runs
+- **Joins on job_number + PO number** — prevents false mismatches when two
+  different orders share the same DS Smith job number
+- Shows "exact PO match" vs "job-only match" count in summary
+- **Name variant normalisation** added for collection and delivery points:
+  - Collection: Masons Landfill / Ipswich variants, Enva/Envea, Welton Bibby
+  - Delivery: DS Smith Devizes variants, SAICA Newport variants, Welton Bibby
+
+#### Location cache corrections (Supabase location_mappings)
+- Fixed 6 wrong cache entries, marked as verified (Tier 2 — bypasses fuzzy):
+  - `EN6 4NE` Woodgreen Timber → `Chas Storer - Potters Bar`
+  - `NN4 9BX` Morrison → `Swan Valley Site 3 - Northampton`
+  - `CH5 2LL` RCP Procurement → `Shotton Mill Site`
+
+#### Scoring guard: collection same as delivery (scoring.py)
+- When `collection_point == delivery_point`, status capped at YELLOW
+- Failure reason: `"collection same as delivery — possible extraction error"`
+- Catches cases where AI extracts delivery postcode for collection (PDF column bleed)
+
+#### Comparison results after all fixes (183 matched jobs, exact PO matches only):
+| Field | Match rate |
+|-------|-----------|
+| collection_point | 93.0% |
+| delivery_point | 99.2% |
+| price | 97.7% |
+| order_number | 97.7% |
 
 ### What's been completed this session (2026-03-26, session 3)
 
@@ -253,7 +294,7 @@ LOG_LEVEL=INFO
 - **Production scheduling** — ✅ DONE. Running as systemd service on Hostinger VPS.
 - **Slack notifications** — ✅ DONE. Batch summary per email + on-demand comparison report.
 - **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
-- **Duplicate sheet row cleanup** — legacy rows from local test runs before VPS deployment, needs one-time manual cleanup
+- **Duplicate sheet row cleanup** — ✅ DONE. 276 legacy rows removed, 243 unique jobs remain.
 - **Kemsley location mapping** — awaiting response from DS Smith staff member re: correct Proteo names
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
