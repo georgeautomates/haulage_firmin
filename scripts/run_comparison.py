@@ -66,6 +66,7 @@ def normalise(val: str, field: str = "") -> str:
             "ds smith - sittingbourne",
             "ds smith - kemsley",
             "kemsley depot (dssr) - sittingbourne",
+            "kemsley depot",
             "d s smith - sittingbourne",
             "ds smith paper ltd - sittingbourne",
         }
@@ -83,6 +84,19 @@ def normalise(val: str, field: str = "") -> str:
             # Welton Bibby & Baron — with/without Ltd
             "welton bibby & baron - westbury":     "welton bibby baron westbury",
             "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+            # VPK / Encase Banbury — rebranded, Proteo uses old or new name
+            "vpk - banbury":                       "vpk encase banbury",
+            "encase - banbury":                    "vpk encase banbury",
+            "banbury (vpk - encase) - banbury":    "vpk encase banbury",
+            # Majestic / Onboard Wolverhampton — same site
+            "majestic corrugated cases ltd - wolverhampton": "wolverhampton corrugated",
+            "onboard - wolverhampton":                       "wolverhampton corrugated",
+            # Cepac Rotherham
+            "cepac ltd - rotherham": "cepac rotherham",
+            "cepac ltd":             "cepac rotherham",
+            # Angleboard Dudley
+            "itw angleboard - dudley":  "angleboard dudley",
+            "angleboard uk ltd - dudley": "angleboard dudley",
         }
         v = delivery_aliases.get(v, v)
 
@@ -94,12 +108,19 @@ def normalise(val: str, field: str = "") -> str:
             "mason landfill - ipswich":    "masons landfill ipswich",
             "masons landfill - ipswich":   "masons landfill ipswich",
             # Enva / Envea — same company, spelling variant
-            "envea  - nottingham":         "enva nottingham",
+            "envea  - nottingham":           "enva nottingham",
             "enva england ltd - nottingham": "enva nottingham",
-            "envea - nottingham":          "enva nottingham",
+            "envea - nottingham":            "enva nottingham",
             # Welton Bibby & Baron — with/without Ltd
             "welton bibby & baron - westbury":     "welton bibby baron westbury",
             "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+            # Suez Huddersfield — punctuation/spacing variants
+            "suez - huddersfield  hd1": "suez huddersfield",
+            "suez. - huddersfield":     "suez huddersfield",
+            "suez - huddersfield":      "suez huddersfield",
+            # RCP Procurement / Shotton Mill — same site, different name in Proteo
+            "rcp procurement - deeside": "shotton mill deeside",
+            "shotton mill site":         "shotton mill deeside",
         }
         v = collection_aliases.get(v, v)
     # Collapse multiple spaces
