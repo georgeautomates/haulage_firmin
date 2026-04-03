@@ -8,6 +8,7 @@ load_dotenv()
 
 from firmin.clients.ai import AiClient
 from firmin.clients.gmail import GmailClient
+from firmin.clients.proteo import ProteoClient
 from firmin.clients.sheets import SheetsClient
 from firmin.clients.slack import SlackClient
 from firmin.clients.supabase import SupabaseClient
@@ -15,6 +16,7 @@ from firmin.pipeline import Pipeline
 from firmin.profiles.loader import load_all_profiles, match_profile
 from firmin.utils.dedup import DedupStore
 from firmin.utils.logger import get_logger
+from firmin.verification import VerificationPipeline
 
 logger = get_logger(__name__)
 
@@ -49,9 +51,17 @@ def run():
         slack_client=slack,
     )
 
+    try:
+        proteo = ProteoClient()
+        verification = VerificationPipeline(proteo=proteo, sheets=sheets)
+        logger.info("Proteo verification pipeline initialised")
+    except RuntimeError as e:
+        logger.warning("Proteo verification disabled: %s", e)
+        verification = None
+
     while True:
         try:
-            _poll(gmail, pipeline, profiles, dedup, gmail_query)
+            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query)
         except Exception as e:
             logger.error("Poll cycle error: %s", e, exc_info=True)
 
@@ -59,7 +69,7 @@ def run():
         time.sleep(poll_interval)
 
 
-def _poll(gmail: GmailClient, pipeline: Pipeline, profiles, dedup: DedupStore, query: str):
+def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipeline | None, profiles, dedup: DedupStore, query: str):
     emails = gmail.fetch_unread(query=query)
 
     if not emails:
@@ -99,6 +109,16 @@ def _poll(gmail: GmailClient, pipeline: Pipeline, profiles, dedup: DedupStore, q
             result.skipped,
             result.errors,
         )
+
+        # Verification: scrape Proteo for each processed job
+        if verification and result.total_jobs > 0:
+            job_numbers = [o.job_number for o in result.orders if not o.skipped_duplicate and not o.error]
+            if job_numbers:
+                logger.info("Running Proteo verification for %d jobs", len(job_numbers))
+                try:
+                    verification.process_jobs(job_numbers)
+                except Exception as e:
+                    logger.error("Verification pipeline error: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":
