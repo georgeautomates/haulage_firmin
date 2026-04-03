@@ -73,17 +73,18 @@ class ProteoClient:
                     const rows = document.querySelectorAll('table tr');
                     let dataRow = null;
 
-                    // Prefer a row with an order link
+                    // Prefer a row with an order link (most reliable)
                     for (const row of rows) {
                         if (row.querySelector('td a[id*="hypUpdateOrder"]')) {
                             dataRow = row;
                             break;
                         }
                     }
-                    // Fallback: first tr with tds but no ths
+                    // Fallback: first tr where first cell looks like a numeric order ID
                     if (!dataRow) {
                         for (const row of rows) {
-                            if (row.querySelector('td') && !row.querySelector('th')) {
+                            const firstCell = row.querySelector('td');
+                            if (firstCell && /^\\d+$/.test(firstCell.textContent.trim())) {
                                 dataRow = row;
                                 break;
                             }
@@ -122,8 +123,8 @@ class ProteoClient:
                     };
                 }""")
 
-                if not row_data or not row_data.get("order_id"):
-                    logger.warning("Proteo: job %s not found in results", job_number)
+                if not row_data or not str(row_data.get("order_id", "")).isdigit():
+                    logger.warning("Proteo: job %s not found in results (order_id=%s)", job_number, row_data.get("order_id") if row_data else None)
                     return None
 
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
