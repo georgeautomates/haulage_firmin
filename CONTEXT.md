@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-03-30 (session 4 — end of day)_
+_Last updated: 2026-04-03 (session 5 — end of day)_
 
 ## What this project is
 
@@ -56,6 +56,70 @@ deploy/
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-03, session 5)
+
+#### Location matching overhaul
+
+##### Conditional overrides (supabase.py, profiles/loader.py, st_regis_fibre.yaml)
+- New `conditional_locations` field in ClientProfile — postcode maps to a list of `{keyword, result}` rules
+- First keyword match in `org_name` wins; empty-keyword rule acts as fallback
+- ME10 2TD now correctly resolves to two different Proteo names:
+  - `KEMSLEY DEPOT` / `DS SMITH RECYCLING` in org → `Kemsley Depot (DSSR) - Sittingbourne`
+  - Everything else (KEMSLEY MILL, KEMSLEY, KM bay codes) → `DS SMITH - SITTINGBOURNE`
+- `pipeline.py` passes `conditional_locations` through to both collection and delivery lookups
+
+##### Known location overrides added (st_regis_fibre.yaml)
+- `OX16 1RE` → `VPK - Banbury` (Encase rebranded to VPK — Supabase stale)
+- `RG19 4NH` → `Saica Packaging   - Thatcham` (Smurfit Kappa site → Saica — Supabase stale)
+- `S63 5JD` → `Cepac Ltd - Rotherham` (Supabase has `S63 5DJ` — 1 char off)
+- `BN18 0FL` → `Biffa - Arundel` (correct Arundel postcode confirmed from cache)
+
+##### Key findings from PDF analysis
+- PDF delivery address label distinguishes Kemsley types:
+  - `KEMSLEY` / `KEMSLEY MILL` = standard inbound baled waste → DS SMITH - SITTINGBOURNE
+  - `KEMSLEY DEPOT` / `DS SMITH RECYCLING` = Lidl jobs → Kemsley Depot (DSSR)
+  - `KEMSLEY MILL (B/D/KM)` = Full Load outbound from DS Smith mill → DS SMITH - SITTINGBOURNE
+- Full Load jobs: DS Smith is the COLLECTION point, delivery is to other paper mills
+- Service type = `Full Load` (not `Baled Waste/Recycling`) for these outbound jobs
+
+#### Proteo verification rebuilt in Python (replaces n8n/SSH/JS)
+
+##### Root cause of Verification gap
+- n8n Google Sheets OAuth credential expired 2026-03-27 — `redirect_uri_mismatch` error
+- Verification tab frozen at 2026-03-26, 178 jobs uncompared since then
+- Decision: replace n8n workflow entirely with Python — removes OAuth dependency
+
+##### New files
+- `firmin/clients/proteo.py` — Playwright (headless Chromium) scraper:
+  - Logs into `firmin.proteoenterprise.co.uk`, navigates to Find Order, searches by job number
+  - Extracts same table columns as JS script (cell indices 0-21)
+  - `headless=True`, single browser per `scrape_job()` call
+  - Requires `PROTEO_USERNAME` + `PROTEO_PASSWORD` in `.env`
+- `firmin/verification.py` — VerificationPipeline:
+  - Loads existing Verification sheet jobs on first run to avoid duplicates
+  - Writes via SheetsClient (same service account as Actual Entry)
+  - Returns written/skipped/not_found/errors summary
+- `scripts/backfill_verification.py` — one-off backfill script:
+  - Finds all Actual Entry jobs missing from Verification
+  - Supports `--dry-run` to preview
+  - Runs sequentially through Playwright (178 jobs ≈ 20-30 min)
+
+##### agent.py changes
+- Imports and initialises `ProteoClient` + `VerificationPipeline` on startup
+- After each email is processed, runs verification for all newly written jobs
+- Gracefully disabled if `PROTEO_PASSWORD` not set
+
+##### VPS deployment
+- `playwright` installed in `.venv` (v1.58.0)
+- `playwright install chromium --with-deps` run — all deps already present
+- `PROTEO_USERNAME` + `PROTEO_PASSWORD` added to `/opt/firmin/.env`
+- Backfill of 178 gap jobs started (in progress as of end of session)
+
+#### Verification gap root cause analysis
+- 178 jobs in Actual Entry with no Proteo match
+- Confirmed: not missing from Proteo — Verification tab just stale since 2026-03-26
+- 3 non-numeric job numbers in Verification (`ecbu...`) — Playwright scrape noise, ignorable
 
 ### What's been completed this session (2026-03-30, session 4)
 
@@ -271,6 +335,8 @@ GMAIL_TOKEN_PATH=config/gmail_token.json ✓
 GMAIL_CREDENTIALS_PATH=config/gmail_credentials.json ✓
 GOOGLE_SERVICE_ACCOUNT_PATH=config/service_account.json ✓
 SLACK_WEBHOOK_URL=set ✓
+PROTEO_USERNAME=George ✓
+PROTEO_PASSWORD=set ✓
 POLL_INTERVAL_SECONDS=60
 LOG_LEVEL=INFO
 ```
@@ -295,10 +361,10 @@ LOG_LEVEL=INFO
 - **Slack notifications** — ✅ DONE. Batch summary per email + on-demand comparison report.
 - **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
 - **Duplicate sheet row cleanup** — ✅ DONE. 276 legacy rows removed, 243 unique jobs remain.
-- **Kemsley location mapping** — awaiting response from DS Smith staff member re: correct Proteo names
+- **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
-- **Verification scrape** — Playwright scrape of Proteo back into Verification tab (currently manual/separate process)
+- **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
 
