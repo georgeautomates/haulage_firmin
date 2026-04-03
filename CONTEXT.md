@@ -154,13 +154,16 @@ The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and runni
 - Failure reason: `"collection same as delivery — possible extraction error"`
 - Catches cases where AI extracts delivery postcode for collection (PDF column bleed)
 
-#### Comparison results after all fixes (183 matched jobs, exact PO matches only):
+#### Comparison results after session 5 fixes (324 matched jobs):
 | Field | Match rate |
 |-------|-----------|
-| collection_point | 93.0% |
-| delivery_point | 99.2% |
-| price | 97.7% |
-| order_number | 97.7% |
+| collection_point | 87.0% |
+| delivery_point | 93.8% |
+| price | 91.7% |
+| order_number | 77.8% |
+| **Full match** | **71.9%** |
+
+Note: order_number low due to Proteo using internal ref format (e.g. `1840071/1478384`) instead of PO — not fixable from PDF data.
 
 ### What's been completed this session (2026-03-26, session 3)
 
@@ -362,6 +365,8 @@ LOG_LEVEL=INFO
 - **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
 - **Duplicate sheet row cleanup** — ✅ DONE. 276 legacy rows removed, 243 unique jobs remain.
 - **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
+- **Proteo scraper junk rows** — RESOLVED. Fallback row selector fixed to require numeric order_id. 159 junk rows cleaned from Verification sheet.
+- **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
