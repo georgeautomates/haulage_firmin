@@ -41,6 +41,7 @@ class ClientProfile:
     sheets: SheetsConfig
     confidence_thresholds: ConfidenceThresholds
     known_locations: dict[str, str] = field(default_factory=dict)  # postcode -> Description
+    conditional_locations: dict[str, list[dict]] = field(default_factory=dict)  # postcode -> [{keyword, result}]
 
 
 def _parse_profile(data: dict) -> ClientProfile:
@@ -72,6 +73,7 @@ def _parse_profile(data: dict) -> ClientProfile:
         sheets=sheets,
         confidence_thresholds=thresholds,
         known_locations=data.get("known_locations", {}),
+        conditional_locations=data.get("conditional_locations", {}),
     )
 
 

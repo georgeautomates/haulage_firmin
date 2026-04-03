@@ -58,18 +58,34 @@ class SupabaseClient:
         org_name: str,
         search: str,
         known_locations: dict[str, str] | None = None,
+        conditional_locations: dict[str, list[dict]] | None = None,
         client_name: str = "",
         pdf_address: str = "",
     ) -> Optional[str]:
         """
         Three-tier location lookup:
-          Tier 1 — known_locations override from client profile (exact, instant)
+          Tier 1 — known_locations / conditional_locations override from client profile (exact, instant)
           Tier 2 — location_mappings cache (verified human matches)
           Tier 3 — fuzzy Postgres query on OrganisationName + full_address
         """
         normalised = _NORMALISE_POSTCODE.sub(" ", postcode.upper().strip())
 
-        # Tier 1: client profile override
+        # Tier 1a: conditional overrides — postcode + keyword match in org_name
+        if conditional_locations:
+            conditions = conditional_locations.get(normalised) or conditional_locations.get(postcode)
+            if conditions:
+                org_upper = org_name.upper()
+                for rule in conditions:
+                    if rule["keyword"].upper() in org_upper:
+                        logger.debug("Tier 1 conditional override for %s (%s) -> %s", postcode, org_name, rule["result"])
+                        return rule["result"]
+                # fallback within conditional block if no keyword matched
+                fallback = next((r["result"] for r in conditions if not r.get("keyword")), None)
+                if fallback:
+                    logger.debug("Tier 1 conditional fallback for %s -> %s", postcode, fallback)
+                    return fallback
+
+        # Tier 1b: exact known_locations override
         if known_locations:
             override = known_locations.get(normalised) or known_locations.get(postcode)
             if override:

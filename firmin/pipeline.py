@@ -162,12 +162,14 @@ class Pipeline:
 
         # Location lookup
         client_name = profile.defaults.get("client_name", "")
+        conditional_locations = getattr(profile, "conditional_locations", {})
         collection_point = (
             self.supabase.lookup_location(
                 postcode=extracted.collection_postcode,
                 org_name=extracted.collection_org,
                 search=extracted.collection_search,
                 known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
                 client_name=client_name,
                 pdf_address=extracted.collection_search,
             ) or "UNMATCHED"
@@ -178,6 +180,7 @@ class Pipeline:
                 org_name=extracted.delivery_org,
                 search=extracted.delivery_search,
                 known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
                 client_name=client_name,
                 pdf_address=extracted.delivery_search,
             ) or extracted.delivery_org or "UNMATCHED"

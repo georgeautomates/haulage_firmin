@@ -30,7 +30,22 @@ sheets:
 # Known location overrides — postcode: exact Description from Location Points table
 # These bypass fuzzy matching entirely. Add any postcode that always maps to one location.
 known_locations:
-  "ME10 2TD": "DS SMITH - SITTINGBOURNE"
+  "OX16 1RE": "VPK - Banbury"           # Encase rebranded to VPK — Supabase still has old name
+  "RG19 4NH": "Saica Packaging   - Thatcham"  # Smurfit Kappa site now Saica — Supabase stale
+  "S63 5JD":  "Cepac Ltd - Rotherham"   # Supabase has S63 5DJ (1 char off) — postcode mismatch
+  "BN18 0FL": "Biffa - Arundel"         # Confirmed from cache — correct Arundel postcode
+
+# Conditional overrides — postcode maps to different point names based on keyword in org name.
+# Rules are checked in order; first keyword match wins.
+# Use for postcodes shared by multiple distinct Proteo point names.
+conditional_locations:
+  "ME10 2TD":
+    - keyword: "KEMSLEY DEPOT"
+      result: "Kemsley Depot (DSSR) - Sittingbourne"
+    - keyword: "DS SMITH RECYCLING"
+      result: "Kemsley Depot (DSSR) - Sittingbourne"
+    - keyword: ""   # fallback — catches KEMSLEY MILL, KEMSLEY, and DS SMITH collection jobs
+      result: "DS SMITH - SITTINGBOURNE"
 
 # Confidence scoring thresholds (0-100)
 confidence_thresholds:
