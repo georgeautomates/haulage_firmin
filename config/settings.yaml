@@ -8,6 +8,9 @@ dedup_db_path: "firmin.db"
 output_dir: "output/orders"
 clients_dir: "config/clients"
 
+# Google Drive — PDF storage for dashboard
+drive_folder_id: ""  # Set via DRIVE_FOLDER_ID env var or paste folder ID here
+
 # Location matching
 location_postcode_fallback: true        # try partial postcode if exact match returns 0 results
 location_min_similarity: 0.4            # minimum similarity score to accept a fuzzy match

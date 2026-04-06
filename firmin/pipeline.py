@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from firmin.clients.ai import AiClient, AiExtractionResult
+from firmin.clients.drive import DriveClient
 from firmin.clients.pdf import extract_pdf
 from firmin.clients.sheets import SheetsClient
 from firmin.clients.slack import SlackClient
@@ -62,14 +63,16 @@ class Pipeline:
         sheets_client: SheetsClient,
         dedup_store: DedupStore,
         slack_client: SlackClient | None = None,
+        drive_client: DriveClient | None = None,
     ):
         self.ai = ai_client
         self.supabase = supabase_client
         self.sheets = sheets_client
         self.dedup = dedup_store
         self.slack = slack_client
+        self.drive = drive_client
 
-    def process_email(self, email: EmailMessage, profile: ClientProfile) -> PipelineResult:
+    def process_email(self, email: EmailMessage, profile: ClientProfile, drive_client: DriveClient | None = None) -> PipelineResult:
         result = PipelineResult(message_id=email.message_id, total_jobs=0)
 
         # Find PDF attachments
@@ -97,12 +100,25 @@ class Pipeline:
             )
             result.total_jobs += len(pdf_result.job_numbers)
 
+            # Upload PDF to Drive (once per attachment)
+            pdf_url = ""
+            _drive = drive_client or self.drive
+            if _drive and attachment.get("data"):
+                try:
+                    pdf_url = _drive.upload_pdf(
+                        pdf_bytes=attachment["data"],
+                        filename=f"{email.message_id}.pdf",
+                    )
+                except Exception as e:
+                    logger.warning("Drive upload failed for %s: %s", attachment["filename"], e)
+
             for job_number in pdf_result.job_numbers:
                 order_result = self._process_job(
                     job_number=job_number,
                     raw_text=pdf_result.raw_text,
                     message_id=email.message_id,
                     profile=profile,
+                    pdf_url=pdf_url,
                 )
                 result.orders.append(order_result)
 
@@ -136,6 +152,7 @@ class Pipeline:
         raw_text: str,
         message_id: str,
         profile: ClientProfile,
+        pdf_url: str = "",
     ) -> OrderResult:
         # Dedup check
         if self.dedup.order_seen(job_number):
@@ -210,6 +227,8 @@ class Pipeline:
             # Metadata
             "delivery_order_number": job_number,
             "processed_at": now,
+            "message_id": message_id,
+            "pdf_url": pdf_url,
             # Sheets column name mapping
             "rate": extracted.price,
             " goods_type": profile.defaults.get("goods_type", ""),

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from firmin.clients.ai import AiClient
+from firmin.clients.drive import DriveClient
 from firmin.clients.gmail import GmailClient
 from firmin.clients.proteo import ProteoClient
 from firmin.clients.sheets import SheetsClient
@@ -43,12 +44,20 @@ def run():
     profiles = load_all_profiles(clients_dir)
     logger.info("Loaded %d client profile(s)", len(profiles))
 
+    try:
+        drive = DriveClient()
+        logger.info("Drive client initialised — PDFs will be uploaded to Drive")
+    except RuntimeError as e:
+        logger.warning("Drive upload disabled: %s", e)
+        drive = None
+
     pipeline = Pipeline(
         ai_client=ai,
         supabase_client=supabase,
         sheets_client=sheets,
         dedup_store=dedup,
         slack_client=slack,
+        drive_client=drive,
     )
 
     try:
@@ -61,7 +70,7 @@ def run():
 
     while True:
         try:
-            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query)
+            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query, drive)
         except Exception as e:
             logger.error("Poll cycle error: %s", e, exc_info=True)
 
@@ -69,7 +78,7 @@ def run():
         time.sleep(poll_interval)
 
 
-def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipeline | None, profiles, dedup: DedupStore, query: str):
+def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipeline | None, profiles, dedup: DedupStore, query: str, drive: DriveClient | None = None):
     emails = gmail.fetch_unread(query=query)
 
     if not emails:
@@ -97,7 +106,7 @@ def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipe
             email.message_id, profile.display_name,
         )
 
-        result = pipeline.process_email(email, profile)
+        result = pipeline.process_email(email, profile, drive_client=drive)
         dedup.mark_email_seen(email.message_id)
         gmail.mark_as_read(email.message_id)
 

@@ -30,7 +30,10 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import json
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
 CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "config/gmail_credentials.json")
 TOKEN_PATH = os.getenv("GMAIL_TOKEN_PATH", "config/gmail_token.json")
