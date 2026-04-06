@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-04-03 (session 5 — end of day)_
+_Last updated: 2026-04-06 (session 6 — end of day)_
 
 ## What this project is
 
@@ -19,13 +19,16 @@ firmin/
 │                           marks emails as read after processing (gmail.modify scope)
 ├── pipeline.py           — per-email orchestrator
 ├── scoring.py            — confidence scoring (GREEN/YELLOW/RED)
+├── verification.py       — VerificationPipeline: scrapes Proteo, writes to Verification sheet
 ├── clients/
 │   ├── gmail.py          — Gmail OAuth2 polling
-│   ├── pdf.py            — PDF text extraction (pdfplumber + PyMuPDF fallback)
+│   ├── pdf.py            — PDF text extraction (PyMuPDF primary, pdfplumber fallback)
 │   ├── ai.py             — AI extraction per job (OpenAI direct)
 │   ├── supabase.py       — 3-tier location lookup (override → cache → fuzzy)
 │   ├── sheets.py         — Google Sheets writer (gspread)
-│   └── slack.py          — Slack webhook client (batch summary + comparison report)
+│   ├── slack.py          — Slack webhook client (batch summary + comparison report)
+│   ├── proteo.py         — Playwright headless scraper for Proteo TMS
+│   └── drive.py          — Google Drive PDF uploader (for dashboard PDF links)
 ├── profiles/
 │   └── loader.py         — YAML client profile loader + email matcher
 └── utils/
@@ -33,29 +36,80 @@ firmin/
     └── logger.py          — logging utility
 
 config/
-├── settings.yaml
+├── settings.yaml          — includes drive_folder_id config
 └── clients/
     └── st_regis_fibre.yaml  — St Regis Fibre A/C client profile
 
 scripts/
-├── setup_gmail_oauth.py        — one-time Gmail OAuth setup (scope: gmail.modify)
+├── setup_gmail_oauth.py        — one-time Gmail OAuth setup (scopes: gmail.modify + drive.file)
 ├── test_pdf_pipeline.py        — smoke test: PDF + AI extraction
 ├── test_supabase.py            — smoke test: Supabase location lookup
 ├── test_e2e.py                 — end-to-end test: PDF → pipeline → Sheets (single job)
 ├── run_comparison.py           — comparison: Actual Entry vs Verification tab (interactive)
 ├── slack_comparison_report.py  — posts comparison report to Slack (on-demand)
-└── debug_comparison.py         — debug: prints job number overlap between sheets
+├── debug_comparison.py         — debug: prints job number overlap between sheets
+├── backfill_verification.py    — scrape Proteo for all Actual Entry jobs missing from Verification
+│                                 supports --dry-run and --yes (for automated timer runs)
+├── cleanup_verification_junk.py — remove junk rows from Verification sheet
+│                                  detects: non-numeric order_id, order_id < 5 digits, wrong client
+└── cleanup_duplicate_rows.py   — one-off: remove duplicate Actual Entry rows (already run)
 
 deploy/
-├── firmin.service   — systemd service unit file
-└── setup_vps.sh     — one-time VPS setup script (clone, venv, service install)
+├── firmin.service              — main agent systemd service
+├── firmin-comparison.service   — daily comparison report service
+├── firmin-comparison.timer     — runs at 08:00 UK time daily
+├── firmin-verification.service — verification backfill service
+├── firmin-verification.timer   — runs at 14:00 + 22:00 UK time daily
+└── setup_vps.sh                — one-time VPS setup script
 ```
+
+## Dashboard (separate repo — E:\Arc Ai\firmin-dashboard)
+
+Next.js app (deployed separately) for reviewing processed orders.
+
+- **Stack:** Next.js, TypeScript, Tailwind, dark theme
+- **Data source:** reads directly from Google Sheets (Comparison + Actual Entry tabs) via service account
+- **Order list page (`/`):** stats bar (total, match rate, mismatched, partial), filter tabs (ALL/MATCH/PARTIAL/MISMATCH), date range filter, search by job number/delivery
+- **Order detail page (`/orders/[id]`):** 3-column layout:
+  - Left: booking form PDF embedded via Google Drive iframe
+  - Middle: our extraction (with mismatch highlights)
+  - Right: Proteo actual values
+- **PDF links:** `pdf_url` + `message_id` stored in Actual Entry sheet, joined at read time
+- **Env vars needed:** `GOOGLE_SERVICE_ACCOUNT_JSON`, `SPREADSHEET_ID`
+- **PDF backlog:** all historical PDFs manually uploaded to Drive with `pdf_url` + `message_id` backfilled into Actual Entry
 
 ---
 
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-06, session 6)
+
+#### Order review dashboard (firmin-dashboard repo)
+- Next.js app built at `E:\Arc Ai\firmin-dashboard`
+- Reads Comparison + Actual Entry sheets, joins on job number
+- Order list with stats, filter tabs, date range, search
+- Order detail: 3-column layout — PDF iframe | our extraction | Proteo actual
+- PDF links via Google Drive: `drive.py` uploads PDF per email, stores URL in Actual Entry sheet
+- `message_id` + `pdf_url` columns added to Actual Entry row data
+- Historical PDFs manually backlogged into Drive with URLs written to sheet
+- `setup_gmail_oauth.py` updated to include `drive.file` scope
+
+#### Verification sheet fixes
+- **Root cause of junk rows:** Proteo search is global across all clients — wrong-client orders (Pallet Track, ECS Container Services, Carousel Logistics etc.) were being written when their job numbers matched DS Smith job numbers
+- **Fix 1:** `proteo.py` now validates `client_name` contains "st regis", "ds smith", "fibre", or "reels" — rejects wrong-client results
+- **Fix 2:** `order_id` must be ≥ 5 digits — rejects pagination summary rows (e.g. `30`)
+- **Cleanup:** `cleanup_verification_junk.py` updated to also detect wrong-client rows — removed 14 junk rows total
+- **Gap root cause:** agent crashed with read timeout on Apr 4, down ~37 hours — jobs processed during downtime were never verified
+- **Backfill:** ran `backfill_verification.py` — 17 written, 25 not found (either not in Proteo yet or wrong-client rejections)
+- **Fix agent scope bug:** `drive` variable was referenced inside `_poll()` but not passed as parameter — would have caused `NameError` on first email
+
+#### Twice-daily verification backfill timer
+- New systemd timer: `firmin-verification.timer` + `firmin-verification.service`
+- Runs at 14:00 + 22:00 UK time — catches jobs entered into Proteo hours after the email arrives
+- `backfill_verification.py` updated with `--yes` flag to skip interactive prompt
+- Installed and active on VPS
 
 ### What's been completed this session (2026-04-03, session 5)
 
@@ -365,13 +419,16 @@ LOG_LEVEL=INFO
 - **Comparison scheduling** — ✅ DONE. systemd timer runs daily at 8am UK time (BST), posts to Slack.
 - **Duplicate sheet row cleanup** — ✅ DONE. 276 legacy rows removed, 243 unique jobs remain.
 - **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
-- **Proteo scraper junk rows** — RESOLVED. Fallback row selector fixed to require numeric order_id. 159 junk rows cleaned from Verification sheet.
+- **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
 - **Multi-client expansion** — image, Excel, email body input types not built
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
+- **Verification retry tracking** — "not found" jobs are re-attempted by the twice-daily timer indefinitely; no cutoff for permanently cancelled/amended jobs yet (low priority)
+- **Dashboard deployment** — firmin-dashboard is running locally; not yet deployed to a public URL
+- **Drive folder ID on VPS** — `DRIVE_FOLDER_ID` needs to be set in `/opt/firmin/.env` for PDF uploads to work on the VPS
 
 ---
 
