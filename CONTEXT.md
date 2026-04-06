@@ -91,10 +91,12 @@ The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and runni
 - Reads Comparison + Actual Entry sheets, joins on job number
 - Order list with stats, filter tabs, date range, search
 - Order detail: 3-column layout — PDF iframe | our extraction | Proteo actual
-- PDF links via Google Drive: `drive.py` uploads PDF per email, stores URL in Actual Entry sheet
+- PDF links via Google Drive: `drive.py` uploads PDF per email using service account, stores URL in Actual Entry sheet
 - `message_id` + `pdf_url` columns added to Actual Entry row data
 - Historical PDFs manually backlogged into Drive with URLs written to sheet
-- `setup_gmail_oauth.py` updated to include `drive.file` scope
+- `DRIVE_FOLDER_ID=1bM-ksJynQjABdLazYAHshvH8_xie5urP` set in VPS `.env` — live and uploading
+- DriveClient uses service account only (OAuth fallback removed — caused invalid_scope crash on VPS)
+- Dashboard not yet deployed publicly — running locally
 
 #### Verification sheet fixes
 - **Root cause of junk rows:** Proteo search is global across all clients — wrong-client orders (Pallet Track, ECS Container Services, Carousel Logistics etc.) were being written when their job numbers matched DS Smith job numbers
@@ -428,7 +430,7 @@ LOG_LEVEL=INFO
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
 - **Verification retry tracking** — "not found" jobs are re-attempted by the twice-daily timer indefinitely; no cutoff for permanently cancelled/amended jobs yet (low priority)
 - **Dashboard deployment** — firmin-dashboard is running locally; not yet deployed to a public URL
-- **Drive folder ID on VPS** — `DRIVE_FOLDER_ID` needs to be set in `/opt/firmin/.env` for PDF uploads to work on the VPS
+- **Drive folder ID on VPS** — ✅ DONE. `DRIVE_FOLDER_ID=1bM-ksJynQjABdLazYAHshvH8_xie5urP` set in `/opt/firmin/.env`
 
 ---
 
