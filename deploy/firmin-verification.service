@@ -1,0 +1,13 @@
+[Unit]
+Description=Firmin — verification backfill (scrape missing jobs from Proteo)
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/firmin
+EnvironmentFile=/opt/firmin/.env
+ExecStart=/opt/firmin/.venv/bin/python scripts/backfill_verification.py --yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=firmin-verification

@@ -51,6 +51,7 @@ def get_job_numbers(ws: gspread.Worksheet) -> list[str]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Print missing jobs without scraping")
+    parser.add_argument("--yes", action="store_true", help="Skip confirmation prompt (for automated runs)")
     args = parser.parse_args()
 
     sheets = SheetsClient()
@@ -85,10 +86,11 @@ def main():
         print("Nothing to backfill.")
         return
 
-    confirm = input(f"\nScrape {len(missing_unique)} jobs from Proteo? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("Aborted.")
-        return
+    if not args.yes:
+        confirm = input(f"\nScrape {len(missing_unique)} jobs from Proteo? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print("Aborted.")
+            return
 
     proteo = ProteoClient()
     verification = VerificationPipeline(proteo=proteo, sheets=sheets)
