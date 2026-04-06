@@ -40,19 +40,37 @@ def main():
     order_id_col = headers.index("order_id")
     all_values = ws.get_all_values()
 
-    # Find rows where order_id is non-numeric (skip header row 0)
+    client_name_col = headers.index("client_name") if "client_name" in headers else -1
+
+    VALID_CLIENT_KEYWORDS = ("st regis", "ds smith", "fibre", "reels")
+
+    # Find junk rows — either non-numeric order_id, or wrong client
     junk_rows = []
     for i, row in enumerate(all_values[1:], start=2):  # 1-indexed, row 1 is header
         order_id = row[order_id_col].strip() if order_id_col < len(row) else ""
-        if order_id and not order_id.replace(".", "").isdigit():
-            junk_rows.append((i, order_id, row))
+        if not order_id:
+            continue
+        # Non-numeric order_id (pagination rows like "30,31,2,3,5")
+        if not order_id.replace(".", "").isdigit():
+            junk_rows.append((i, order_id, row, "non-numeric order_id"))
+            continue
+        # Numeric but short (e.g. "30" — pagination summary)
+        if len(order_id.replace(".", "")) < 5:
+            junk_rows.append((i, order_id, row, "order_id too short"))
+            continue
+        # Wrong client — result from a different company in Proteo
+        if client_name_col >= 0:
+            client = row[client_name_col].strip().lower() if client_name_col < len(row) else ""
+            if client and not any(kw in client for kw in VALID_CLIENT_KEYWORDS):
+                junk_rows.append((i, order_id, row, f"wrong client: {row[client_name_col].strip()}"))
+                continue
 
     print(f"Total rows: {len(all_values) - 1}")
     print(f"Junk rows found: {len(junk_rows)}")
     print()
 
-    for row_num, order_id, row in junk_rows:
-        print(f"  Row {row_num}: order_id={repr(order_id)} | {row[:5]}")
+    for row_num, order_id, row, reason in junk_rows:
+        print(f"  Row {row_num}: order_id={repr(order_id)} | reason={reason} | {row[:3]}")
 
     if not junk_rows:
         print("Nothing to clean.")
@@ -68,9 +86,9 @@ def main():
         return
 
     # Delete in reverse order to preserve row indices
-    for row_num, order_id, _ in reversed(junk_rows):
+    for row_num, order_id, _, reason in reversed(junk_rows):
         ws.delete_rows(row_num)
-        print(f"  Deleted row {row_num} (order_id={repr(order_id)})")
+        print(f"  Deleted row {row_num} (order_id={repr(order_id)}, reason={reason})")
         time.sleep(1.2)  # avoid Sheets rate limit
 
     print(f"\nDone. Removed {len(junk_rows)} junk rows.")

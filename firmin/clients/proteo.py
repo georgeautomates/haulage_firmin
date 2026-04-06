@@ -123,12 +123,23 @@ class ProteoClient:
                     };
                 }""")
 
-                if not row_data or not str(row_data.get("order_id", "")).isdigit():
+                if not row_data or not str(row_data.get("order_id", "")).isdigit() or len(str(row_data.get("order_id", ""))) < 5:
                     logger.warning("Proteo: job %s not found in results (order_id=%s)", job_number, row_data.get("order_id") if row_data else None)
                     return None
 
+                # Validate the result belongs to the right client — Proteo search is
+                # global across all clients, so a matching job number from Pallet Track
+                # or another company can be returned instead of the DS Smith job.
+                client = str(row_data.get("client_name", "")).lower()
+                if not any(kw in client for kw in ("st regis", "ds smith", "fibre", "reels")):
+                    logger.warning(
+                        "Proteo: job %s result rejected — client_name '%s' does not match DS Smith/St Regis",
+                        job_number, row_data.get("client_name"),
+                    )
+                    return None
+
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
-                logger.debug("Proteo: extracted job %s -> order_id=%s", job_number, row_data["order_id"])
+                logger.debug("Proteo: extracted job %s -> order_id=%s client=%s", job_number, row_data["order_id"], row_data["client_name"])
                 return row_data
 
             except Exception as e:
