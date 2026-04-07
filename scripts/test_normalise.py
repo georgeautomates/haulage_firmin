@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import normalise directly — no network calls involved
-from scripts.run_comparison import normalise
+# Import normalise and fields_match directly — no network calls involved
+from scripts.run_comparison import normalise, fields_match
 
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
@@ -134,6 +134,52 @@ date_cases = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Order number compound matching (fields_match)
+# ---------------------------------------------------------------------------
+
+def check_match(description: str, a: str, v: str, expected: bool):
+    got = fields_match(a, v, "order_number")
+    ok = got == expected
+    status = PASS if ok else FAIL
+    print(f"  [{status}] {description}")
+    if not ok:
+        print(f"          extracted: {repr(a)}")
+        print(f"          proteo:    {repr(v)}")
+        print(f"          expected match={expected}, got match={got}")
+    return ok
+
+
+def run_match_suite(suite_name: str, cases: list[tuple]) -> tuple[int, int]:
+    print(f"\n{suite_name}")
+    print("-" * len(suite_name))
+    passed = 0
+    for desc, a, v, expected in cases:
+        if check_match(desc, a, v, expected):
+            passed += 1
+    return passed, len(cases)
+
+
+order_match_cases = [
+    # Customer PO is second part of Proteo compound number
+    ("PO in second part",          "1480107",      "1842622/1480107",      True),
+    ("PO in second part (2)",      "1479977",      "140484/1479977",       True),
+    ("PO in first part",           "1842622",      "1842622/1480107",      True),
+    # PO- prefix stripped before matching
+    ("PO- prefix stripped",        "PO-0804282",   "1840282/1478631",      False),  # genuinely different
+    ("PO- prefix same number",     "PO-0804538",   "PO-0804538**DEMURRAGE", True),  # DEMURRAGE suffix stripped
+    # Leading zero stripping
+    ("leading zeros stripped",     "804282",       "1840282/1478631",      False),  # still different
+    # Empty extracted = no match
+    ("empty extracted",            "",             "PO-0810504/SKM-S17461", False),
+    # Exact match
+    ("exact match",                "PO-0804269",   "PO-080269",            False),  # genuinely different truncation
+    ("exact same",                 "1838735",      "1838735",              True),
+    # Compound on both sides
+    ("both compound",              "1480107",      "1842622/1480107",      True),
+]
+
+
 def main():
     total_pass = 0
     total_all = 0
@@ -146,6 +192,13 @@ def main():
         ("DATE/TIME NORMALISATION", date_cases),
     ]:
         p, a = run_suite(suite, cases)
+        total_pass += p
+        total_all += a
+
+    for suite, cases in [
+        ("ORDER NUMBER COMPOUND MATCHING", order_match_cases),
+    ]:
+        p, a = run_match_suite(suite, cases)
         total_pass += p
         total_all += a
 
