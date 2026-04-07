@@ -54,11 +54,18 @@ def normalise(val: str, field: str = "") -> str:
     v = re.sub(r'\b(\d{2}/\d{2})/(\d{2})\b', lambda m: m.group(1) + "/20" + m.group(2), v)
     # Normalise time: 8:00 -> 08:00
     v = re.sub(r'\b(\d):', r'0\1:', v)
-    # Normalise price: remove £ and .00
-    v = re.sub(r'£', '', v)
-    v = re.sub(r'\.00$', '', v)
-    # Normalise order number: match on PO prefix only (before any / suffix)
+    # Normalise price: remove £, commas, and trailing .00 / .0
+    if field == "price":
+        v = re.sub(r'[£,]', '', v)        # strip £ and thousand-separator commas
+        v = re.sub(r'\.00$', '', v)        # £300.00 -> 300
+        v = re.sub(r'\.0$', '', v)         # £300.0  -> 300
+        v = v.strip()
+    else:
+        v = re.sub(r'£', '', v)
+        v = re.sub(r'\.00$', '', v)
+    # Normalise order number: strip PO- prefix, take part before any / suffix, strip spaces
     if field == "order_number":
+        v = re.sub(r'^po-', '', v)
         v = v.split("/")[0].strip()
     # Normalise delivery point: treat Kemsley aliases as equivalent
     if field == "delivery_point":
@@ -69,6 +76,8 @@ def normalise(val: str, field: str = "") -> str:
             "kemsley depot",
             "d s smith - sittingbourne",
             "ds smith paper ltd - sittingbourne",
+            "ds smith - kemsley mill",
+            "kemsley mill - sittingbourne",
         }
         if v in kemsley_aliases:
             v = "kemsley"
@@ -77,26 +86,40 @@ def normalise(val: str, field: str = "") -> str:
             "ds smith packaging ltd - devizes": "ds smith devizes",
             "d s smith - devizes":              "ds smith devizes",
             "ds smith - devizes":               "ds smith devizes",
+            "ds smith packaging - devizes":     "ds smith devizes",
             # SAICA Newport — various formats
-            "newport (saica)":  "saica newport",
-            "saica":            "saica newport",
-            "saica - newport":  "saica newport",
+            "newport (saica)":   "saica newport",
+            "saica":             "saica newport",
+            "saica - newport":   "saica newport",
+            "saica pack newport": "saica newport",
             # Welton Bibby & Baron — with/without Ltd
             "welton bibby & baron - westbury":     "welton bibby baron westbury",
             "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+            "welton bibby baron - westbury":       "welton bibby baron westbury",
             # VPK / Encase Banbury — rebranded, Proteo uses old or new name
             "vpk - banbury":                       "vpk encase banbury",
             "encase - banbury":                    "vpk encase banbury",
             "banbury (vpk - encase) - banbury":    "vpk encase banbury",
+            "vpk encase - banbury":                "vpk encase banbury",
             # Majestic / Onboard Wolverhampton — same site
             "majestic corrugated cases ltd - wolverhampton": "wolverhampton corrugated",
             "onboard - wolverhampton":                       "wolverhampton corrugated",
+            "majestic - wolverhampton":                      "wolverhampton corrugated",
             # Cepac Rotherham
             "cepac ltd - rotherham": "cepac rotherham",
             "cepac ltd":             "cepac rotherham",
+            "cepac - rotherham":     "cepac rotherham",
             # Angleboard Dudley
-            "itw angleboard - dudley":  "angleboard dudley",
+            "itw angleboard - dudley":    "angleboard dudley",
             "angleboard uk ltd - dudley": "angleboard dudley",
+            "angleboard - dudley":        "angleboard dudley",
+            # St Regis / Mondi — same mill, rebranded
+            "st regis - bristol":  "mondi bristol",
+            "mondi - bristol":     "mondi bristol",
+            "st regis bristol":    "mondi bristol",
+            # Smurfit Kappa variants
+            "smurfit kappa - wrexham": "smurfit kappa wrexham",
+            "sk - wrexham":            "smurfit kappa wrexham",
         }
         v = delivery_aliases.get(v, v)
 
@@ -107,20 +130,33 @@ def normalise(val: str, field: str = "") -> str:
             "ipswich (masons landfill) -": "masons landfill ipswich",
             "mason landfill - ipswich":    "masons landfill ipswich",
             "masons landfill - ipswich":   "masons landfill ipswich",
+            "masons - ipswich":            "masons landfill ipswich",
             # Enva / Envea — same company, spelling variant
             "envea  - nottingham":           "enva nottingham",
             "enva england ltd - nottingham": "enva nottingham",
             "envea - nottingham":            "enva nottingham",
+            "enva - nottingham":             "enva nottingham",
             # Welton Bibby & Baron — with/without Ltd
             "welton bibby & baron - westbury":     "welton bibby baron westbury",
             "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
+            "welton bibby baron - westbury":       "welton bibby baron westbury",
             # Suez Huddersfield — punctuation/spacing variants
             "suez - huddersfield  hd1": "suez huddersfield",
             "suez. - huddersfield":     "suez huddersfield",
             "suez - huddersfield":      "suez huddersfield",
+            "suez huddersfield hd1":    "suez huddersfield",
             # RCP Procurement / Shotton Mill — same site, different name in Proteo
             "rcp procurement - deeside": "shotton mill deeside",
             "shotton mill site":         "shotton mill deeside",
+            "shotton mill - deeside":    "shotton mill deeside",
+            # DS Smith / Kemsley as collection point
+            "ds smith - kemsley":              "kemsley",
+            "ds smith - sittingbourne":        "kemsley",
+            "kemsley depot":                   "kemsley",
+            "kemsley mill":                    "kemsley",
+            # Smurfit Kappa variants
+            "smurfit kappa - wrexham": "smurfit kappa wrexham",
+            "sk - wrexham":            "smurfit kappa wrexham",
         }
         v = collection_aliases.get(v, v)
     # Collapse multiple spaces

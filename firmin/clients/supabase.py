@@ -12,17 +12,31 @@ logger = get_logger(__name__)
 
 _NORMALISE_POSTCODE = re.compile(r'\s+')
 
-# Tier 2: fuzzy query — matches on OrganisationName (primary) + full_address (secondary)
+# Tier 3: fuzzy query — matches on OrganisationName (primary) + full_address (secondary)
+# Returns similarity score so we can reject low-confidence matches.
 LOCATION_QUERY = """
-SELECT "Description" AS point_name
+SELECT "Description" AS point_name,
+       (similarity("OrganisationName", %s) * 0.6 + similarity(full_address, %s) * 0.4) AS score
 FROM "Location Points"
 WHERE REGEXP_REPLACE("PostCode", '\\s+', ' ', 'g') = %s
-ORDER BY (
-    similarity("OrganisationName", %s) * 0.6 +
-    similarity(full_address, %s) * 0.4
-) DESC
+ORDER BY score DESC
 LIMIT 1
 """
+
+# Tier 3b: org-name-only fallback when postcode extraction fails or is wrong
+LOCATION_QUERY_NO_POSTCODE = """
+SELECT "Description" AS point_name,
+       similarity("OrganisationName", %s) AS score
+FROM "Location Points"
+WHERE similarity("OrganisationName", %s) > 0.45
+ORDER BY score DESC
+LIMIT 1
+"""
+
+# Minimum combined similarity score to accept a fuzzy match.
+# Below this threshold the match is too uncertain and we return None
+# rather than risk writing a wrong location to the sheet.
+_FUZZY_MIN_SCORE = 0.35
 
 # Tier 3: cache lookup
 CACHE_LOOKUP_QUERY = """
@@ -103,12 +117,15 @@ class SupabaseClient:
                             logger.debug("Tier 2 cache hit for %s -> %s", postcode, row["matched_description"])
                             return row["matched_description"]
 
-                    # Tier 3: fuzzy search
-                    cur.execute(LOCATION_QUERY, (normalised, org_name, search))
+                    # Tier 3: fuzzy search by postcode + org name
+                    cur.execute(LOCATION_QUERY, (org_name, search, normalised))
                     row = cur.fetchone()
-                    if row:
+                    if row and row["score"] >= _FUZZY_MIN_SCORE:
                         result = row["point_name"]
-                        logger.debug("Tier 3 fuzzy match for %s -> %s", postcode, result)
+                        logger.debug(
+                            "Tier 3 fuzzy match for %s (score=%.2f) -> %s",
+                            postcode, row["score"], result,
+                        )
                         # Store in cache as unverified for future human review
                         if client_name and pdf_address:
                             try:
@@ -120,8 +137,33 @@ class SupabaseClient:
                             except Exception:
                                 pass  # cache write failure is non-fatal
                         return result
+                    elif row:
+                        logger.warning(
+                            "Tier 3 fuzzy match score too low (%.2f) for postcode %s org '%s' — trying org-only fallback",
+                            row["score"], postcode, org_name,
+                        )
 
-                    logger.debug("No location match for postcode: %s", postcode)
+                    # Tier 3b: org-name-only fallback (handles wrong/missing postcode from AI)
+                    cur.execute(LOCATION_QUERY_NO_POSTCODE, (org_name, org_name))
+                    row = cur.fetchone()
+                    if row and row["score"] >= 0.5:
+                        result = row["point_name"]
+                        logger.debug(
+                            "Tier 3b org-only fallback match (score=%.2f) -> %s",
+                            row["score"], result,
+                        )
+                        if client_name and pdf_address:
+                            try:
+                                cur.execute(CACHE_INSERT_QUERY, (
+                                    pdf_address, normalised, result, client_name,
+                                    normalised, client_name, pdf_address,
+                                ))
+                                conn.commit()
+                            except Exception:
+                                pass
+                        return result
+
+                    logger.debug("No location match for postcode: %s org: %s", postcode, org_name)
                     return None
 
         except Exception as e:

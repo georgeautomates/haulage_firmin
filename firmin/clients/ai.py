@@ -28,17 +28,75 @@ Here is the full booking form text:
 Extract the details for job number: {job_number}
 
 Rules:
-- collection_org: the organisation name in brackets on the collection address first line, or the location name if no brackets
-- delivery_org: the organisation/location name on the delivery address first line. If it is just a place name like "KEMSLEY" use that.
+- collection_org: the organisation name in brackets on the collection address first line, or the location name if no brackets. \
+  e.g. "DARTFORD (DATA SOLUTIONS)" → "DATA SOLUTIONS"; "KEMSLEY" → "KEMSLEY".
+- delivery_org: the organisation/location name on the delivery address first line. If it is just a place name like "KEMSLEY" use that. \
+  e.g. "KEMSLEY" → "KEMSLEY"; "SITTINGBOURNE (DS SMITH)" → "DS SMITH".
 - collection_address: street address lines only for the COLLECTION address, NOT including the org name or postcode. Do not mix in delivery address lines.
 - delivery_address: street address lines only for the DELIVERY address, NOT including the org name or postcode. Do not mix in collection address lines.
-- collection_postcode: the postcode belonging to the collection address (appears at the end of the collection address block)
-- delivery_postcode: the postcode belonging to the delivery address (appears at the end of the delivery address block)
-- price: the value starting with £ in the Price/Order/Ref column (e.g. £300.00, £490.00). Always look for the £ symbol — never use a plain number as the price.
-- order_number: the order/PO reference in the Price/Order/Ref column. It may start with "PO-" (e.g. PO-0804230) or may be a plain number (e.g. 1838735). It is the first reference on its own line before or after the £ price.
+- collection_postcode: the postcode belonging to the collection address (appears at the end of the collection address block). \
+  Must be a valid UK postcode format e.g. "ME10 2XF", "TN9 1RA". Never copy the delivery postcode here.
+- delivery_postcode: the postcode belonging to the delivery address (appears at the end of the delivery address block). \
+  Must be a valid UK postcode format. Never copy the collection postcode here.
+- price: the value starting with £ in the Price/Order/Ref column (e.g. £300.00, £490.00, £1,200.00). \
+  Always include the £ symbol and preserve the exact amount. Never use a plain number as the price.
+- order_number: the order/PO reference in the Price/Order/Ref column. It may start with "PO-" (e.g. PO-0804230) or \
+  may be a plain number (e.g. 1838735). It is the first reference on its own line before or after the £ price. \
+  Do NOT include the customer_ref or work_type here.
 - customer_ref: any additional reference on the line after the order number (e.g. SKM-S17211, 0700-1300, 1479493). Empty string if not present.
 - work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, TE3 etc). Empty string if not present.
+- collection_date and delivery_date: format as DD/MM/YYYY (e.g. 14/04/2026). Never swap collection and delivery dates.
+- collection_time and delivery_time: format as HH:MM using 24-hour time (e.g. 08:00, 13:30).
 - All fields must be filled with actual values from the text, never with placeholder descriptions.
+- Double-check: collection_postcode and delivery_postcode must be DIFFERENT postcodes belonging to their respective addresses.
+
+--- EXAMPLES ---
+
+Example 1 — standard row with bracketed org name:
+  PDF text (abbreviated): "12345  14/04/2026 08:00  DARTFORD (DATA SOLUTIONS)  Manor Road  DA1 1AB  15/04/2026 10:00  KEMSLEY  Milton Creek Road  ME10 2XF  PO-0804230  £300.00  SKM-S17211  X"
+  Output:
+  {{
+    "job_number": "12345",
+    "collection_org": "DATA SOLUTIONS",
+    "collection_address": "Manor Road",
+    "collection_postcode": "DA1 1AB",
+    "collection_date": "14/04/2026",
+    "collection_time": "08:00",
+    "delivery_org": "KEMSLEY",
+    "delivery_address": "Milton Creek Road",
+    "delivery_postcode": "ME10 2XF",
+    "delivery_date": "15/04/2026",
+    "delivery_time": "10:00",
+    "price": "£300.00",
+    "order_number": "PO-0804230",
+    "customer_ref": "SKM-S17211",
+    "work_type": "X"
+  }}
+
+Example 2 — plain location name, numeric PO, no customer ref:
+  PDF text (abbreviated): "67890  20/04/2026 07:00  AVONMOUTH (SUEZ)  Kings Weston Lane  BS11 0YA  20/04/2026 14:00  DEVIZES (DS SMITH)  Hopton Road  SN10 2EY  1838735  £490.00  MIS"
+  Output:
+  {{
+    "job_number": "67890",
+    "collection_org": "SUEZ",
+    "collection_address": "Kings Weston Lane",
+    "collection_postcode": "BS11 0YA",
+    "collection_date": "20/04/2026",
+    "collection_time": "07:00",
+    "delivery_org": "DS SMITH",
+    "delivery_address": "Hopton Road",
+    "delivery_postcode": "SN10 2EY",
+    "delivery_date": "20/04/2026",
+    "delivery_time": "14:00",
+    "price": "£490.00",
+    "order_number": "1838735",
+    "customer_ref": "",
+    "work_type": "MIS"
+  }}
+
+--- END EXAMPLES ---
+
+Now extract the details for job number {job_number} from the booking form text above.
 
 Return ONLY this JSON with no markdown, no backticks, no explanation:
 {{
@@ -101,11 +159,11 @@ class AiClient:
         if os.getenv("OPENROUTER_API_KEY"):
             api_key = os.getenv("OPENROUTER_API_KEY")
             base_url = "https://openrouter.ai/api/v1"
-            default_model = "openai/gpt-4o-mini"
+            default_model = "openai/gpt-4o"
         else:
             api_key = os.getenv("OPENAI_API_KEY")
             base_url = None  # use OpenAI directly
-            default_model = "gpt-4o-mini"
+            default_model = "gpt-4o"
 
         self.model = os.getenv("AI_EXTRACTION_MODEL", default_model)
         self.client = OpenAI(api_key=api_key, base_url=base_url)
