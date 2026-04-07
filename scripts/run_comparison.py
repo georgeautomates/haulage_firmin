@@ -164,6 +164,38 @@ def normalise(val: str, field: str = "") -> str:
     return v
 
 
+def normalise_order(val: str) -> str:
+    """Normalise a single order number token: lowercase, strip PO- prefix and junk suffixes."""
+    v = val.strip().lower()
+    v = re.sub(r'\*+.*$', '', v)      # strip **DEMURRAGE and similar suffixes
+    v = re.sub(r'^po-0*', '', v)      # strip PO- prefix and leading zeros: PO-0804282 -> 804282
+    v = re.sub(r'^0+', '', v)         # strip leading zeros from plain numbers: 01480107 -> 1480107
+    return v.strip()
+
+
+def fields_match(a_val: str, v_val: str, field: str) -> bool:
+    """
+    Compare two field values, returning True if they match after normalisation.
+
+    For order_number, Proteo often stores a compound reference like
+    'INTERNAL_ID/CUSTOMER_PO'. We check whether the extracted value matches
+    EITHER part of the compound, so '1480107' matches '1842622/1480107'.
+    """
+    if field != "order_number":
+        return normalise(a_val, field) == normalise(v_val, field)
+
+    # Normalise extracted value (single token)
+    a_norm = normalise_order(a_val)
+    if not a_norm:
+        return False
+
+    # Proteo value may be compound — check every part
+    v_parts = [normalise_order(p) for p in v_val.split("/")]
+    v_parts = [p for p in v_parts if p]  # drop empty parts
+
+    return a_norm in v_parts
+
+
 def sheet_to_dicts(ws) -> list[dict]:
     rows = ws.get_all_records(numericise_ignore=["all"])
     return rows
@@ -245,7 +277,7 @@ def main():
         for label, a_col, v_col in COMPARE_FIELDS:
             a_val = str(a.get(a_col, "")).strip()
             v_val = str(v.get(v_col, "")).strip()
-            match = normalise(a_val, label) == normalise(v_val, label)
+            match = fields_match(a_val, v_val, label)
             row[f"{label}_extracted"] = a_val
             row[f"{label}_proteo"]    = v_val
             row[f"{label}_match"]     = "YES" if match else "NO"
@@ -255,7 +287,7 @@ def main():
         for label, a_col, v_col in INFO_FIELDS:
             a_val = str(a.get(a_col, "")).strip()
             v_val = str(v.get(v_col, "")).strip()
-            match = normalise(a_val, label) == normalise(v_val, label)
+            match = fields_match(a_val, v_val, label)
             row[f"{label}_extracted"] = a_val
             row[f"{label}_proteo"]    = v_val
             row[f"{label}_match"]     = "YES" if match else "NO (info only)"
