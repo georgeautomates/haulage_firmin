@@ -154,6 +154,23 @@ def normalise(val: str, field: str = "") -> str:
             "ds smith - sittingbourne":        "kemsley",
             "kemsley depot":                   "kemsley",
             "kemsley mill":                    "kemsley",
+            "kemsley mill (km)":               "kemsley",
+            "kemsley mill (a)":                "kemsley",
+            "kemsley mill (d)":                "kemsley",
+            # Biffa Ford / Arundel — same site
+            "ford (biffa)":             "biffa arundel",
+            "biffa - arundel":          "biffa arundel",
+            "biffa ford - arundel":     "biffa arundel",
+            # Lidl Dunstable / Luton — same site
+            "luton (lidl)":                                   "lidl dunstable",
+            "lidl regional distribution centre - dunstable":  "lidl dunstable",
+            "lidl - dunstable":                               "lidl dunstable",
+            # Tesco Magor / Trunking Station
+            "tesco (magor) - magor":            "magor trunking station",
+            "magor - trunking station - magor": "magor trunking station",
+            # Morrison / Swan Valley Northampton — same site
+            "morrison - northampton":           "swan valley northampton",
+            "swan valley site 3 - northampton": "swan valley northampton",
             # Smurfit Kappa variants
             "smurfit kappa - wrexham": "smurfit kappa wrexham",
             "sk - wrexham":            "smurfit kappa wrexham",
