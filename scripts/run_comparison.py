@@ -120,6 +120,48 @@ def normalise(val: str, field: str = "") -> str:
             # Smurfit Kappa variants
             "smurfit kappa - wrexham": "smurfit kappa wrexham",
             "sk - wrexham":            "smurfit kappa wrexham",
+            # Smurfit Kappa Abercarn
+            "abercarn (kappa)":          "smurfit kappa abercarn",
+            "abercarn (smurfit kappa)":  "smurfit kappa abercarn",
+            "smurfit kappa - abercarn":  "smurfit kappa abercarn",
+            "kappa - abercarn":          "smurfit kappa abercarn",
+            # Smurfit Kappa Yate
+            "yate (smurfit kappa)":      "smurfit kappa yate",
+            "smurfit kappa yate":        "smurfit kappa yate",
+            "smurfit kappa - yate":      "smurfit kappa yate",
+            # Kappa / Smurfit Kappa Northampton
+            "northampton (kappa)":       "smurfit kappa northampton",
+            "kappa northampton":         "smurfit kappa northampton",
+            "smurfit kappa - northampton": "smurfit kappa northampton",
+            # VPK Selby
+            "selby (vpk)":               "vpk selby",
+            "vpk - selby":               "vpk selby",
+            # VPK Wellington
+            "wellington (vpk)":          "vpk wellington",
+            "vpk - wellington":          "vpk wellington",
+            # SAICA / SCA Thatcham
+            "thatcham (saica)":                    "saica thatcham",
+            "sca packaging uk ltd - thatcham":     "saica thatcham",
+            "saica pack - thatcham":               "saica thatcham",
+            "saica - thatcham":                    "saica thatcham",
+            # SAV Eco / Hamilton Leicester
+            "leicester (sav eco hamilton)":        "sav eco leicester",
+            "sav eco packaging - leicester":       "sav eco leicester",
+            "sav eco - leicester":                 "sav eco leicester",
+            # Board24 Coalville
+            "coalville (board24 ltd)":             "board24 coalville",
+            "board24 ltd - coalville":             "board24 coalville",
+            "board24 - coalville":                 "board24 coalville",
+            # Mondi Birmingham
+            "birmingham (mondi group)":            "mondi birmingham",
+            "mondi group - birmingham":            "mondi birmingham",
+            "mondi - birmingham":                  "mondi birmingham",
+            # Siniat Bristol
+            "siniat - bristol":                    "siniat bristol",
+            "siniat ltd - bristol":                "siniat bristol",
+            # Cullompton (Higher Kings Mill)
+            "higher kings mill - cullompton":      "cullompton",
+            "higher kings mill":                   "cullompton",
         }
         v = delivery_aliases.get(v, v)
 
@@ -174,6 +216,45 @@ def normalise(val: str, field: str = "") -> str:
             # Smurfit Kappa variants
             "smurfit kappa - wrexham": "smurfit kappa wrexham",
             "sk - wrexham":            "smurfit kappa wrexham",
+            # Additional Kemsley Mill variants (sub-bays)
+            "kemsley mill (a c)":      "kemsley",
+            "kemsley mill (b d)":      "kemsley",
+            "kemsley mill (c)":        "kemsley",
+            "kemsley mill (d: pm6)":   "kemsley",
+            "kemsley mill (e)":        "kemsley",
+            "kemsley mill (f)":        "kemsley",
+            # Suez / Kirklees Huddersfield — same site
+            "kirklees (suez)":               "suez huddersfield",
+            "suez - kirklees":               "suez huddersfield",
+            # Veolia collection depots
+            "amersham (veolia)":             "veolia amersham",
+            "oldham (veolia)":               "veolia oldham",
+            "portsmouth (veolia)":           "veolia portsmouth",
+            "mansfield (veolia brentwood)":  "veolia mansfield",
+            "mansfield (veolia)":            "veolia mansfield",
+            # Tesco collection depots
+            "avonmouth (tesco)":             "tesco avonmouth",
+            "tesco - avonmouth":             "tesco avonmouth",
+            "reading (tesco)":               "tesco reading",
+            "tesco - reading":               "tesco reading",
+            "goole (tesco)":                 "tesco goole",
+            "tesco - goole":                 "tesco goole",
+            # Biffa Irlam (Manchester)
+            "irlam (biffa)":                 "biffa irlam",
+            "biffa - irlam":                 "biffa irlam",
+            # AM Recycling / Deeside
+            "deeside (am recycling)":        "am recycling deeside",
+            "am recycling - deeside":        "am recycling deeside",
+            # Boxes & Pack Bristol
+            "bristol (boxes & pack)":        "boxes and pack bristol",
+            "boxes & pack - bristol":        "boxes and pack bristol",
+            # Green Recycling Maldon
+            "maldon (green recycling)":      "green recycling maldon",
+            "green recycling - maldon":      "green recycling maldon",
+            # WH Smith Swindon
+            "swindon (wh smith plc)":        "wh smith swindon",
+            "wh smith plc - swindon":        "wh smith swindon",
+            "wh smith - swindon":            "wh smith swindon",
         }
         v = collection_aliases.get(v, v)
     # Collapse multiple spaces
