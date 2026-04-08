@@ -29,9 +29,12 @@ Extract the details for job number: {job_number}
 
 Rules:
 - collection_org: the organisation name in brackets on the collection address first line, or the location name if no brackets. \
-  e.g. "DARTFORD (DATA SOLUTIONS)" → "DATA SOLUTIONS"; "KEMSLEY" → "KEMSLEY".
-- delivery_org: the organisation/location name on the delivery address first line. If it is just a place name like "KEMSLEY" use that. \
-  e.g. "KEMSLEY" → "KEMSLEY"; "SITTINGBOURNE (DS SMITH)" → "DS SMITH".
+  e.g. "DARTFORD (DATA SOLUTIONS)" → "DATA SOLUTIONS"; "KEMSLEY" → "KEMSLEY"; "KEMSLEY MILL (KM)" → "KEMSLEY MILL". \
+  IMPORTANT: Kemsley/DS Smith can appear as EITHER the collection OR the delivery point depending on the job — \
+  always check the column position, never assume Kemsley is always the delivery.
+- delivery_org: the organisation/location name on the delivery address first line. \
+  e.g. "KEMSLEY" → "KEMSLEY"; "BRISTOL (SINIAT)" → "SINIAT". \
+  IMPORTANT: some jobs collect FROM Kemsley and deliver TO another site — read the column headings carefully.
 - collection_address: street address lines only for the COLLECTION address, NOT including the org name or postcode. Do not mix in delivery address lines.
 - delivery_address: street address lines only for the DELIVERY address, NOT including the org name or postcode. Do not mix in collection address lines.
 - collection_postcode: the postcode belonging to the collection address (appears at the end of the collection address block). \
@@ -40,12 +43,15 @@ Rules:
   Must be a valid UK postcode format. Never copy the collection postcode here.
 - price: the value starting with £ in the Price/Order/Ref column (e.g. £300.00, £490.00, £1,200.00). \
   Always include the £ symbol and preserve the exact amount. Never use a plain number as the price.
-- order_number: the DS Smith PO reference in the Price/Order/Ref column. It almost always starts with "PO-" \
-  followed by 7 digits (e.g. PO-0804230, PO-0811396). Only use a plain number if there is absolutely no PO- \
-  prefixed value present — never use a short code, a work type, or a Proteo-generated numeric Order ID. \
-  The order_number is always on its own line near the £ price. Do NOT include customer_ref or work_type here.
-- customer_ref: any additional reference on the line after the order number (e.g. SKM-S17211, 0700-1300, 1479493). Empty string if not present.
-- work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, TE3 etc). Empty string if not present.
+- order_number: extract as follows depending on format: \
+  (a) If a PO-prefixed reference exists (e.g. PO-0808360), always use that — it is the DS Smith PO number. \
+  (b) If there is no PO- prefix and the field contains two numbers separated by "/" (e.g. "1841694 / 1479265"), \
+      use the FIRST number only. \
+  Never use a work type code, time value, or SKM reference as the order_number. \
+  Do NOT include customer_ref or work_type here.
+- customer_ref: the reference after the order_number — e.g. the second number in "PO-0808360 / 1773780", \
+  or a SKM code like "SKM-S17211", or a time window like "0700-1300". Empty string if not present.
+- work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, KFL, HYP etc). Empty string if not present.
 - collection_date and delivery_date: format as DD/MM/YYYY (e.g. 14/04/2026). Never swap collection and delivery dates.
 - collection_time and delivery_time: format as HH:MM using 24-hour time (e.g. 08:00, 13:30).
 - All fields must be filled with actual values from the text, never with placeholder descriptions.
