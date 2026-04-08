@@ -40,9 +40,10 @@ Rules:
   Must be a valid UK postcode format. Never copy the collection postcode here.
 - price: the value starting with £ in the Price/Order/Ref column (e.g. £300.00, £490.00, £1,200.00). \
   Always include the £ symbol and preserve the exact amount. Never use a plain number as the price.
-- order_number: the order/PO reference in the Price/Order/Ref column. It may start with "PO-" (e.g. PO-0804230) or \
-  may be a plain number (e.g. 1838735). It is the first reference on its own line before or after the £ price. \
-  Do NOT include the customer_ref or work_type here.
+- order_number: the DS Smith PO reference in the Price/Order/Ref column. It almost always starts with "PO-" \
+  followed by 7 digits (e.g. PO-0804230, PO-0811396). Only use a plain number if there is absolutely no PO- \
+  prefixed value present — never use a short code, a work type, or a Proteo-generated numeric Order ID. \
+  The order_number is always on its own line near the £ price. Do NOT include customer_ref or work_type here.
 - customer_ref: any additional reference on the line after the order number (e.g. SKM-S17211, 0700-1300, 1479493). Empty string if not present.
 - work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, TE3 etc). Empty string if not present.
 - collection_date and delivery_date: format as DD/MM/YYYY (e.g. 14/04/2026). Never swap collection and delivery dates.
