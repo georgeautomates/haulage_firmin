@@ -11,6 +11,58 @@ from firmin.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Job number pattern: 7-digit numbers starting with 25 or 26
+_JOB_RE = re.compile(r'\b(2[56]\d{5})\b')
+
+
+def _slice_job_text(raw_text: str, job_number: str) -> str:
+    """
+    Return only the portion of raw_text that belongs to job_number.
+
+    PyMuPDF flattens multi-column PDFs so rows from adjacent jobs bleed
+    together. By slicing between consecutive job number occurrences we give
+    the AI a clean window containing only the target job's data.
+
+    Falls back to the full text if the job number isn't found.
+    """
+    # Find all job number positions in order of appearance
+    matches = [(m.group(1), m.start()) for m in _JOB_RE.finditer(raw_text)]
+
+    # Find the position of our target job number
+    target_pos = None
+    target_idx = None
+    for i, (jn, pos) in enumerate(matches):
+        if jn == job_number:
+            target_pos = pos
+            target_idx = i
+            break
+
+    if target_pos is None:
+        logger.warning("Job %s not found in raw text — using full text", job_number)
+        return raw_text
+
+    # Slice starts at the previous different job number so we don't bleed in
+    # data (especially PO numbers) from the job immediately before ours.
+    start = 0
+    for i in range(target_idx - 1, -1, -1):
+        prev_jn, prev_pos = matches[i]
+        if prev_jn != job_number:
+            start = prev_pos
+            break
+
+    # Slice ends at the start of the next different job number
+    end = len(raw_text)
+    for i in range(target_idx + 1, len(matches)):
+        next_jn, next_pos = matches[i]
+        if next_jn != job_number:
+            end = next_pos
+            break
+
+    sliced = raw_text[start:end]
+    logger.debug("Sliced text for job %s: %d chars (from %d to %d)", job_number, len(sliced), start, end)
+    return sliced
+
+
 EXTRACTION_PROMPT = """\
 You are extracting order details from a UK haulage booking form PDF.
 
@@ -176,7 +228,8 @@ class AiClient:
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 
     def extract_job(self, raw_text: str, job_number: str) -> Optional[AiExtractionResult]:
-        prompt = EXTRACTION_PROMPT.format(raw_text=raw_text, job_number=job_number)
+        job_text = _slice_job_text(raw_text, job_number)
+        prompt = EXTRACTION_PROMPT.format(raw_text=job_text, job_number=job_number)
 
         try:
             response = self.client.chat.completions.create(
