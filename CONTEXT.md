@@ -84,6 +84,64 @@ Next.js app (deployed separately) for reviewing processed orders.
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
 
+### What's been completed this session (2026-04-09, session 8)
+
+#### Re-extraction regression script — full run (343 jobs)
+- Script updated to also write per-job detail to `Re-extraction` sheet tab (one row per job, all field-level match booleans)
+- `Re-extraction` tab overwrites on each run — always reflects latest run
+- History tab filters out test runs (<100 jobs) in the dashboard chart
+
+#### Column bleed fix (firmin/clients/ai.py)
+- Root cause: PyMuPDF flattens multi-column PDF → adjacent job data bleeds together
+- Fix: `_slice_job_text()` — slices raw text from previous job number to next job number before passing to AI
+- First slice attempt used 200-char lookback — still bled PO numbers from previous job
+- Final fix: slice starts at previous job number boundary, ends at next job number boundary
+- Results with gpt-4o-mini + slicing (343 jobs):
+  - collection_point: 89.5% → **98.8%**
+  - delivery_point: 94.2% → **99.4%**
+  - price: 90.1% → **98.5%**
+  - order_number: 85.7% → **87.5%**
+  - **Full match: 83.4% → 85.7%**
+
+#### George's prompt + model upgrade (pulled from remote)
+- AI prompt significantly expanded: better rules, two worked examples, Kemsley collection/delivery disambiguation
+- Model upgraded from `gpt-4o-mini` → `gpt-4o`
+- Combined run (gpt-4o + slicing): 81.3% full match — slightly lower than gpt-4o-mini + slicing (85.7%)
+- **Open question: gpt-4o underperforming gpt-4o-mini on this task — needs another run to confirm**
+
+#### Dashboard — History trend chart
+- Collapsible "Re-extraction History" panel between stats bar and filter tabs
+- SVG line chart (no library) — 5 lines: full match, collection, delivery, price, order number
+- Filters to runs with ≥100 jobs to exclude test runs
+- Shows latest run summary inline when collapsed
+- API route: `/api/history`
+
+#### Dashboard — per-job re-extraction diff panel
+- "Re-extraction Check" section at bottom of middle panel on order detail page
+- Green "stable" badge if all re-extracted values match stored values
+- Orange "N fields drifted" badge + stored vs re-extracted comparison for drifted fields
+- Catches column bleed / wrong-job extractions at the per-job level
+- API route: `/api/reextraction?job=<job_number>`
+
+#### Dashboard deployment fix
+- Vercel hobby plan only deploys commits authored by `georgeautomates`
+- Fix: set `git config user.name/email` to `georgeautomates` in firmin-dashboard repo
+- All future commits from that repo will author as `georgeautomates` → auto-deploys work
+
+#### Remaining known mismatches (unfixable or deferred)
+- `PO-0804269` vs `PO-080269` — AI adding extra digit, possible PDF character issue
+- Proteo internal ref format (`1841694/1479265`) — unfixable from PDF
+- `**LOST LOAD**` suffix — staff annotation in Proteo, not in PDF
+- `Veolia - Southwark` UNMATCHED — needs postcode override in st_regis_fibre.yaml
+- `VPK - Selby` vs `VPK Packaging - Selby` — alias missing from normalisation
+
+#### Next session priorities (session 9):
+1. **Confirm gpt-4o vs gpt-4o-mini** — run regression again, determine which model performs better for this task
+2. **Multi-client expansion** — George wants the top 5 clients onboarded (St Regis is #1). Need client names + sample PDFs/emails for each. **Ask George for the list of top 5 clients and sample booking forms.**
+3. **Daily stats tracking** — agent writes a `Daily Stats` sheet tab per day (jobs processed, GREEN/YELLOW/RED, match rate). Dashboard reads it for a day-by-day accuracy chart of live orders.
+4. **Fix remaining location mismatches** — Veolia Southwark postcode override, VPK Selby alias, SCA/SAICA Newport alias
+5. **Order list drift badge** — show re-extraction drift indicator on order list rows (not just detail page)
+
 ### What's been completed this session (2026-04-06, session 6)
 
 #### Order review dashboard (firmin-dashboard repo)
