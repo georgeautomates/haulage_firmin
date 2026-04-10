@@ -35,10 +35,10 @@ print("Verification columns:", list(vf_rows[0].keys()) if vf_rows else "empty")
 print("Actual Entry columns:", list(ae_rows[0].keys()) if ae_rows else "empty")
 print("Sample Verification row:", {k: v for k, v in list(vf_rows[0].items())[:6]} if vf_rows else "")
 
-# Build verification lookup by job number
+# Build verification lookup by delivery_order_number (the join key)
 vf_by_job = {}
 for row in vf_rows:
-    jn = str(row.get("job_number", "") or row.get("Job Number", "")).strip()
+    jn = str(row.get("delivery_order_number", "")).strip()
     if jn:
         vf_by_job[jn] = row
 
@@ -50,7 +50,7 @@ fibre_jobs = []
 unmatched = []
 
 for row in ae_rows:
-    jn = str(row.get("job_number", "") or row.get("delivery_order_number", "")).strip()
+    jn = str(row.get("delivery_order_number", "")).strip()
     client = str(row.get("client_name", "")).strip()
     if "unipet" in client.lower():
         continue  # skip Unipet
@@ -60,7 +60,7 @@ for row in ae_rows:
         unmatched.append(row)
         continue
 
-    vf_client = str(vf.get("client_name", "") or vf.get("Client Name", "")).strip().lower()
+    vf_client = str(vf.get("client_name", "")).strip().lower()
     if "reel" in vf_client:
         reels_jobs.append((row, vf))
     else:
