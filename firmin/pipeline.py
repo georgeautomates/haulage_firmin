@@ -162,7 +162,9 @@ class Pipeline:
 
     def _process_unipet_row(self, row, message_id: str, profile: ClientProfile, pdf_url: str = "") -> OrderResult:
         from firmin.clients.unipet_pdf import UnipetRow
-        job_number = row.delivery_note
+        # Customer Order number is the Proteo-searchable unique identifier (Order No)
+        # Delivery Note is Proteo's internal Delivery Order Number
+        job_number = row.customer_order
 
         if self.dedup.order_seen(job_number):
             logger.info("Skipping duplicate Unipet job: %s", job_number)
@@ -193,10 +195,10 @@ class Pipeline:
         order = {
             **profile.defaults,
             "job_number": job_number,
-            "delivery_order_number": job_number,
-            "order_number": row.customer_order,
-            "po_number": row.customer_order,
-            "customer_ref": row.customer_order,
+            "delivery_order_number": row.delivery_note,
+            "order_number": job_number,
+            "po_number": job_number,
+            "customer_ref": job_number,
             "pallets": row.pallets,
             "spaces": row.pallets,
             "collection_date": row.collection_date,
