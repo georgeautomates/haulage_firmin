@@ -314,11 +314,21 @@ class Pipeline:
             ) or extracted.delivery_org or "UNMATCHED"
         )
 
+        # Classify St Regis sub-client: Reels jobs collect FROM DS Smith mill,
+        # Fibre jobs deliver TO DS Smith mill.
+        client_name = profile.defaults.get("client_name", "")
+        if "st regis" in client_name.lower() or "ds smith" in client_name.lower():
+            if collection_point == "DS SMITH - SITTINGBOURNE":
+                client_name = "St Regis Reels"
+            else:
+                client_name = "St Regis Fibre A/C"
+
         # Build order row
         now = datetime.now(timezone.utc).isoformat()
         order = {
             # Hardcoded defaults from profile
             **profile.defaults,
+            "client_name": client_name,
             # AI extracted
             "job_number": job_number,
             "price": extracted.price,
