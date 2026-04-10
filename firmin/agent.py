@@ -26,7 +26,7 @@ def run():
     poll_interval = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
     dedup_db = os.getenv("DEDUP_DB_PATH", "firmin.db")
     clients_dir = os.getenv("CLIENTS_DIR", "config/clients")
-    gmail_query = os.getenv("GMAIL_QUERY", "subject:@dssmith.com is:unread has:attachment")
+    gmail_query = os.getenv("GMAIL_QUERY", "")
 
     logger.info("Firmin agent starting — poll interval: %ds", poll_interval)
 
@@ -43,6 +43,15 @@ def run():
 
     profiles = load_all_profiles(clients_dir)
     logger.info("Loaded %d client profile(s)", len(profiles))
+
+    # Build Gmail query from all profile subject_contains filters (OR'd together)
+    if not gmail_query:
+        terms = []
+        for p in profiles:
+            for kw in p.email_filters.subject_contains:
+                terms.append(f"subject:{kw}")
+        gmail_query = "(" + " OR ".join(terms) + ") is:unread has:attachment"
+    logger.info("Gmail query: %s", gmail_query)
 
     try:
         drive = DriveClient()
