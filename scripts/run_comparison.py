@@ -321,32 +321,40 @@ def main():
         v = v.split("/")[0].strip()
         return v
 
-    # Index actual by job number
+    # Index actual by (job, client) — keeps Unipet and DS Smith jobs separate
     actual_by_job: dict[str, dict] = {}
     for row in actual_rows:
         job = str(row.get("delivery_order_number", "")).strip()
         if job:
             actual_by_job[job] = row
 
-    # Index verification by (job_number, po_key) and also by job_number alone
+    # Index verification by (job, client_type) and (job, po, client_type)
+    def client_type(name: str) -> str:
+        n = name.lower()
+        if "unipet" in n:
+            return "unipet"
+        return "dssmith"
+
     verify_by_job_po: dict[tuple, dict] = {}
-    verify_by_job: dict[str, dict] = {}
+    verify_by_job: dict[tuple, dict] = {}
     for row in verify_rows:
         job = str(row.get("delivery_order_number", "")).strip()
         po  = po_key(str(row.get("order_number", "")))
+        ct  = client_type(str(row.get("client_name", "")))
         if job:
-            verify_by_job_po[(job, po)] = row
-            verify_by_job[job] = row  # last row wins — fallback only
+            verify_by_job_po[(job, po, ct)] = row
+            verify_by_job[(job, ct)] = row  # last row wins — fallback only
 
-    # Match: prefer job+PO match, fall back to job-only
+    # Match: prefer job+PO match, fall back to job-only — same client type only
     matched_jobs = []
     actual_unmatched = []
     for job, a_row in sorted(actual_by_job.items()):
         po = po_key(str(a_row.get("order_number", "")))
-        if (job, po) in verify_by_job_po:
-            matched_jobs.append((job, verify_by_job_po[(job, po)], "exact"))
-        elif job in verify_by_job:
-            matched_jobs.append((job, verify_by_job[job], "job_only"))
+        ct = client_type(str(a_row.get("client_name", "")))
+        if (job, po, ct) in verify_by_job_po:
+            matched_jobs.append((job, verify_by_job_po[(job, po, ct)], "exact"))
+        elif (job, ct) in verify_by_job:
+            matched_jobs.append((job, verify_by_job[(job, ct)], "job_only"))
         else:
             actual_unmatched.append(job)
 
