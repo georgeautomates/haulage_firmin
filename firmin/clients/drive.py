@@ -1,8 +1,11 @@
 from __future__ import annotations
 import io
 import os
+from pathlib import Path
 
+from google.auth.transport.requests import Request
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
@@ -11,6 +14,10 @@ from firmin.utils.logger import get_logger
 logger = get_logger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+OAUTH_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
 
 class DriveClient:
@@ -19,12 +26,22 @@ class DriveClient:
         if not self.folder_id:
             raise RuntimeError("DRIVE_FOLDER_ID not set — cannot upload PDFs to Drive")
 
-        sa_path = service_account_path or os.getenv(
-            "GOOGLE_SERVICE_ACCOUNT_PATH", "config/service_account.json"
-        )
-        creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
-        self._service = build("drive", "v3", credentials=creds)
-        logger.debug("DriveClient initialised with service account")
+        # Prefer OAuth user credentials (gmail_token.json) over service account —
+        # service accounts have no storage quota on personal Google accounts.
+        token_path = os.getenv("GMAIL_TOKEN_PATH", "config/gmail_token.json")
+        if Path(token_path).exists():
+            creds = Credentials.from_authorized_user_file(token_path, OAUTH_SCOPES)
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            self._service = build("drive", "v3", credentials=creds)
+            logger.debug("DriveClient initialised with OAuth user credentials")
+        else:
+            sa_path = service_account_path or os.getenv(
+                "GOOGLE_SERVICE_ACCOUNT_PATH", "config/service_account.json"
+            )
+            creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
+            self._service = build("drive", "v3", credentials=creds)
+            logger.debug("DriveClient initialised with service account")
 
     def upload_pdf(self, pdf_bytes: bytes, filename: str) -> str:
         """Upload a PDF to the configured Drive folder. Returns a direct view URL.
