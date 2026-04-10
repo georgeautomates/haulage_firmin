@@ -133,6 +133,7 @@ class Pipeline:
                         message_id=email.message_id,
                         profile=profile,
                         pdf_url=pdf_url,
+                        email_subject=email.subject,
                     )
                     result.orders.append(order_result)
 
@@ -264,6 +265,7 @@ class Pipeline:
         message_id: str,
         profile: ClientProfile,
         pdf_url: str = "",
+        email_subject: str = "",
     ) -> OrderResult:
         # Dedup check
         if self.dedup.order_seen(job_number):
@@ -314,11 +316,12 @@ class Pipeline:
             ) or extracted.delivery_org or "UNMATCHED"
         )
 
-        # Classify St Regis sub-client: Reels jobs collect FROM DS Smith mill,
-        # Fibre jobs deliver TO DS Smith mill.
+        # Classify St Regis sub-client:
+        # Primary: subject line contains "reels"
+        # Fallback: collection point is DS Smith mill (outbound Full Load jobs)
         client_name = profile.defaults.get("client_name", "")
         if "st regis" in client_name.lower() or "ds smith" in client_name.lower():
-            if collection_point == "DS SMITH - SITTINGBOURNE":
+            if "reel" in email_subject.lower() or collection_point == "DS SMITH - SITTINGBOURNE":
                 client_name = "St Regis Reels"
             else:
                 client_name = "St Regis Fibre A/C"
