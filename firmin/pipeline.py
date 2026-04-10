@@ -9,6 +9,7 @@ from firmin.clients.pdf import extract_pdf
 from firmin.clients.sheets import SheetsClient
 from firmin.clients.slack import SlackClient
 from firmin.clients.supabase import SupabaseClient
+from firmin.clients.unipet_pdf import parse_unipet_manifest
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -98,7 +99,8 @@ class Pipeline:
                 "Found %d job numbers in %s",
                 len(pdf_result.job_numbers), attachment["filename"]
             )
-            result.total_jobs += len(pdf_result.job_numbers)
+            if profile.parser != "unipet_manifest":
+                result.total_jobs += len(pdf_result.job_numbers)
 
             # Upload PDF to Drive (once per attachment)
             pdf_url = ""
@@ -112,15 +114,27 @@ class Pipeline:
                 except Exception as e:
                     logger.warning("Drive upload failed for %s: %s", attachment["filename"], e)
 
-            for job_number in pdf_result.job_numbers:
-                order_result = self._process_job(
-                    job_number=job_number,
-                    raw_text=pdf_result.raw_text,
-                    message_id=email.message_id,
-                    profile=profile,
-                    pdf_url=pdf_url,
-                )
-                result.orders.append(order_result)
+            if profile.parser == "unipet_manifest":
+                manifest = parse_unipet_manifest(pdf_result.raw_text)
+                result.total_jobs += len(manifest.rows)
+                for row in manifest.rows:
+                    order_result = self._process_unipet_row(
+                        row=row,
+                        message_id=email.message_id,
+                        profile=profile,
+                        pdf_url=pdf_url,
+                    )
+                    result.orders.append(order_result)
+            else:
+                for job_number in pdf_result.job_numbers:
+                    order_result = self._process_job(
+                        job_number=job_number,
+                        raw_text=pdf_result.raw_text,
+                        message_id=email.message_id,
+                        profile=profile,
+                        pdf_url=pdf_url,
+                    )
+                    result.orders.append(order_result)
 
         if result.total_jobs > 0 and self.slack:
             slack_orders = [
@@ -145,6 +159,101 @@ class Pipeline:
             )
 
         return result
+
+    def _process_unipet_row(self, row, message_id: str, profile: ClientProfile, pdf_url: str = "") -> OrderResult:
+        from firmin.clients.unipet_pdf import UnipetRow
+        job_number = row.delivery_note
+
+        if self.dedup.order_seen(job_number):
+            logger.info("Skipping duplicate Unipet job: %s", job_number)
+            return OrderResult(
+                job_number=job_number,
+                status="SKIPPED",
+                composite_score=0,
+                written_to_sheet=False,
+                skipped_duplicate=True,
+            )
+
+        # Delivery location lookup by postcode + customer name
+        client_name = profile.defaults.get("client_name", "")
+        conditional_locations = getattr(profile, "conditional_locations", {})
+        delivery_point = (
+            self.supabase.lookup_location(
+                postcode=row.postcode,
+                org_name=row.customer_name,
+                search=row.customer_name,
+                known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
+                client_name=client_name,
+                pdf_address=row.customer_name,
+            ) or row.customer_name
+        )
+
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        order = {
+            **profile.defaults,
+            "job_number": job_number,
+            "delivery_order_number": job_number,
+            "order_number": row.customer_order,
+            "po_number": row.customer_order,
+            "customer_ref": row.customer_order,
+            "pallets": row.pallets,
+            "spaces": row.pallets,
+            "collection_date": row.collection_date,
+            "collection_time": "09:00",
+            "delivery_point": delivery_point,
+            "delivery_postcode": row.postcode,
+            "delivery_date": row.delivery_date,
+            "delivery_time": row.delivery_time,
+            "price": "",
+            "rate": "",
+            "work_type": "",
+            "processed_at": now,
+            "message_id": message_id,
+            "pdf_url": pdf_url,
+            " goods_type": profile.defaults.get("goods_type", ""),
+        }
+
+        scored = score_order(order)
+        order["composite_score"] = scored.composite_score
+        order["Composite_score"] = scored.composite_score
+        order["status"] = scored.status
+        order["Status"] = scored.status
+
+        self.dedup.mark_order_seen(job_number, message_id)
+
+        try:
+            self.sheets.append_row(
+                profile.sheets.spreadsheet_id,
+                profile.sheets.worksheet_name,
+                order,
+            )
+            logger.info("Unipet job %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+            return OrderResult(
+                job_number=job_number,
+                status=scored.status,
+                composite_score=scored.composite_score,
+                written_to_sheet=True,
+                skipped_duplicate=False,
+                collection_point=profile.defaults.get("collection_point", "—"),
+                delivery_point=delivery_point,
+                price="—",
+                failure_reasons=scored.failure_reasons,
+            )
+        except Exception as e:
+            logger.error("SHEET WRITE FAILED for Unipet job %s (already marked seen — manual recovery needed): %s", job_number, e)
+            return OrderResult(
+                job_number=job_number,
+                status=scored.status,
+                composite_score=scored.composite_score,
+                written_to_sheet=False,
+                skipped_duplicate=False,
+                error=str(e),
+                collection_point=profile.defaults.get("collection_point", "—"),
+                delivery_point=delivery_point,
+                price="—",
+                failure_reasons=scored.failure_reasons,
+            )
 
     def _process_job(
         self,

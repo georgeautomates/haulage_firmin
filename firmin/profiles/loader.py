@@ -42,6 +42,7 @@ class ClientProfile:
     confidence_thresholds: ConfidenceThresholds
     known_locations: dict[str, str] = field(default_factory=dict)  # postcode -> Description
     conditional_locations: dict[str, list[dict]] = field(default_factory=dict)  # postcode -> [{keyword, result}]
+    parser: str = "default"  # "default" = DS Smith AI pipeline, "unipet_manifest" = manifest parser
 
 
 def _parse_profile(data: dict) -> ClientProfile:
@@ -74,6 +75,7 @@ def _parse_profile(data: dict) -> ClientProfile:
         confidence_thresholds=thresholds,
         known_locations=data.get("known_locations", {}),
         conditional_locations=data.get("conditional_locations", {}),
+        parser=data.get("parser", "default"),
     )
 
 

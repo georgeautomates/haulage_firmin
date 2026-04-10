@@ -1,0 +1,30 @@
+client_id: unipet
+display_name: "Unipet International Ltd"
+
+# Email matching
+email_filters:
+  subject_contains:
+    - "unipet.co.uk"
+  has_attachment: true
+  attachment_type: "pdf"
+
+# Manifest-style client — uses dedicated parser, not DS Smith job number regex
+parser: "unipet_manifest"
+
+# Fields hardcoded for this client
+defaults:
+  client_name: "Unipet International Ltd"
+  business_type: "General | Part/Full Load"
+  service: "Palletised"
+  goods_type: "Palletised"
+  collection_point: "Unipet International Ltd - Sittingbourne"
+
+# Google Sheets output target
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+# Confidence scoring thresholds
+confidence_thresholds:
+  green: 80
+  yellow: 50
