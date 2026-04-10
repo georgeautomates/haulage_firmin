@@ -90,6 +90,6 @@ for row_num, new_client in all_changes:
     cell = f"{client_col_letter}{row_num}"
     ws.update_acell(cell, new_client)
     print(f"  Row {row_num} → {new_client}")
-    time.sleep(0.5)  # avoid Sheets rate limit
+    time.sleep(1.2)  # avoid Sheets rate limit
 
 print(f"\nDone. {len(to_reels)} rows → Reels, {len(to_fibre)} rows → Fibre A/C")
