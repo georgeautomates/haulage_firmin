@@ -30,12 +30,19 @@ vf = ss.worksheet("Verification")
 vf_rows = vf.get_all_records()
 print(f"Verification: {len(vf_rows)} rows")
 
+# Debug: show column names
+print("Verification columns:", list(vf_rows[0].keys()) if vf_rows else "empty")
+print("Actual Entry columns:", list(ae_rows[0].keys()) if ae_rows else "empty")
+print("Sample Verification row:", {k: v for k, v in list(vf_rows[0].items())[:6]} if vf_rows else "")
+
 # Build verification lookup by job number
 vf_by_job = {}
 for row in vf_rows:
     jn = str(row.get("job_number", "") or row.get("Job Number", "")).strip()
     if jn:
         vf_by_job[jn] = row
+
+print(f"Verification jobs indexed: {len(vf_by_job)}, sample keys: {list(vf_by_job.keys())[:5]}")
 
 # Join and classify
 reels_jobs = []
