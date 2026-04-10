@@ -26,7 +26,7 @@ REQUIRED_FIELDS = [
     "order_number",
 ]
 
-KNOWN_CLIENTS = ["St Regis", "DS Smith"]
+KNOWN_CLIENTS = ["St Regis", "DS Smith", "Unipet"]
 
 
 def score_order(order: dict) -> ScoredOrder:
@@ -48,13 +48,17 @@ def score_order(order: dict) -> ScoredOrder:
     )
 
     # Signal 4: price validity (20%)
-    price_str = str(order.get("price") or order.get("rate") or "0")
-    price_clean = "".join(c for c in price_str if c.isdigit() or c == ".")
-    try:
-        price = float(price_clean)
-    except ValueError:
-        price = 0.0
-    signal4 = 100 if 50 < price < 10000 else 0
+    # If price is intentionally absent (manifest clients like Unipet), treat as neutral
+    price_str = str(order.get("price") or order.get("rate") or "")
+    if not price_str.strip():
+        signal4 = 50  # neutral — no price expected
+    else:
+        price_clean = "".join(c for c in price_str if c.isdigit() or c == ".")
+        try:
+            price = float(price_clean)
+        except ValueError:
+            price = 0.0
+        signal4 = 100 if 50 < price < 10000 else 0
 
     # Signal 5: date format validity (10%)
     import re
