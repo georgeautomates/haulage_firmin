@@ -338,9 +338,13 @@ def main():
     verify_by_job_po: dict[tuple, dict] = {}
     verify_by_job: dict[tuple, dict] = {}
     for row in verify_rows:
-        job = str(row.get("delivery_order_number", "")).strip()
-        po  = po_key(str(row.get("order_number", "")))
-        ct  = client_type(str(row.get("client_name", "")))
+        ct = client_type(str(row.get("client_name", "")))
+        if ct == "unipet":
+            # For Unipet: join on order_number (= Customer Order = Proteo Order No)
+            job = str(row.get("order_number", "")).strip()
+        else:
+            job = str(row.get("delivery_order_number", "")).strip()
+        po = po_key(str(row.get("order_number", "")))
         if job:
             verify_by_job_po[(job, po, ct)] = row
             verify_by_job[(job, ct)] = row  # last row wins — fallback only
