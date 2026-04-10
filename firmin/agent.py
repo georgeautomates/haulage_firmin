@@ -108,6 +108,7 @@ def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipe
         if not profile:
             logger.info("No profile matched for email: %s (subject: %s)", email.message_id, email.subject)
             dedup.mark_email_seen(email.message_id)
+            gmail.mark_as_read(email.message_id)
             continue
 
         logger.info(
