@@ -24,6 +24,10 @@ sheets:
   spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
   worksheet_name: "Actual Entry"
 
+# Known location overrides
+known_locations:
+  "LE17 4XR": "RSPB - Lutterworth"
+
 # Confidence scoring thresholds
 confidence_thresholds:
   green: 80
