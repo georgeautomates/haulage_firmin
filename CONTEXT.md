@@ -1,11 +1,13 @@
 # Firmin — Session Context
-_Last updated: 2026-04-06 (session 6 — end of day)_
+_Last updated: 2026-04-10 (session 10)_
 
 ## What this project is
 
-Python agent for Alan Firmin Ltd (haulage). Polls Gmail for DS Smith booking form emails (PDF attachments), extracts structured order data per job using AI, looks up location point names from Supabase, scores confidence, and writes rows to Google Sheets. Runs in shadow mode alongside the existing n8n workflow for validation.
+Python agent for Alan Firmin Ltd (haulage). Polls Gmail for booking form emails (PDF attachments), extracts structured order data per job, looks up location point names from Supabase, scores confidence, and writes rows to Google Sheets. Runs in shadow mode alongside the existing n8n workflow for validation.
 
-This is a **multi-client system** — built to scale to other clients who send orders as images, Excel files, or plain email body text. DS Smith (St Regis Fibre A/C) is the first and only client implemented so far.
+This is a **multi-client system**. Two clients are now live:
+1. **St Regis Fibre A/C** (DS Smith) — AI extraction pipeline
+2. **Unipet International Ltd** — manifest parser (no AI)
 
 Reference n8n workflow: `C:\Users\USERAS\Downloads\St Regis Fiber - Shadow Mode.json`
 
@@ -38,7 +40,8 @@ firmin/
 config/
 ├── settings.yaml          — includes drive_folder_id config
 └── clients/
-    └── st_regis_fibre.yaml  — St Regis Fibre A/C client profile
+    ├── st_regis_fibre.yaml  — St Regis Fibre A/C client profile
+    └── unipet.yaml          — Unipet International Ltd client profile
 
 scripts/
 ├── setup_gmail_oauth.py        — one-time Gmail OAuth setup (scopes: gmail.modify + drive.file)
@@ -52,7 +55,10 @@ scripts/
 │                                 supports --dry-run and --yes (for automated timer runs)
 ├── cleanup_verification_junk.py — remove junk rows from Verification sheet
 │                                  detects: non-numeric order_id, order_id < 5 digits, wrong client
-└── cleanup_duplicate_rows.py   — one-off: remove duplicate Actual Entry rows (already run)
+├── cleanup_duplicate_rows.py   — one-off: remove duplicate Actual Entry rows (already run)
+├── backfill_pdf_urls.py        — backfill pdf_url for rows with message_id but no pdf_url
+├── backfill_message_ids.py     — backfill message_id + pdf_url by scanning Gmail (for rows with neither)
+└── test_unipet.py              — test Unipet manifest parsing + location lookup against real emails
 
 deploy/
 ├── firmin.service              — main agent systemd service
@@ -83,6 +89,35 @@ Next.js app (deployed separately) for reviewing processed orders.
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-10, session 10)
+
+#### Drive upload fix — switched to OAuth user credentials
+- Service account has no storage quota on personal Google accounts — all Drive uploads were silently failing
+- Fixed: `drive.py` now prefers OAuth user credentials (`gmail_token.json`) over service account
+- `gmail.py` SCOPES updated to include `drive.file` alongside `gmail.modify`
+- `setup_gmail_oauth.py` already had both scopes — token regenerated locally and uploaded to VPS
+- 78 historical rows had `message_id` but no `pdf_url` — backfilled using `backfill_pdf_urls.py`
+
+#### Proteo verification JS syntax error fixed
+- Twice-daily verification timer was failing on every job: `SyntaxError: Unexpected token 'if'`
+- Root cause: Python ternary syntax (`x if y else z`) accidentally used inside a JS string in `proteo.py`
+- Fixed to proper JS ternary: `getText(13) ? getText(13).split(/\s+/)[0] : ''`
+- Also added `unipet` to client_name validation in `proteo.py`
+
+#### Unipet International Ltd onboarded (second client)
+- Email filter: `subject:unipet.co.uk has:attachment` — emails forwarded from `MelvynRogers@unipet.co.uk`
+- Custom manifest parser (`firmin/clients/unipet_pdf.py`) — no AI, regex-based table extraction
+- PDF format: UNIPET COLLECTION MANIFEST — one row per delivery, columns: Delivery Note, Customer Order, Customer Name, Postcode, Pallets, Prebooked Date/Time
+- Collection point hardcoded: `Unipet International Ltd - Sittingbourne` (confirmed across 250+ Proteo orders)
+- `Awaiting Paperwork` rows use Customer Order number as job ref
+- Delivery location lookup via Supabase fuzzy match — 6/6 locations matched on first test
+- Known location override: `LE17 4XR` → `RSPB - Lutterworth`
+- Dedup key: Customer Order number (= Proteo Order No) — confirmed from Proteo export
+- `delivery_order_number` = Delivery Note number (Proteo's internal reference)
+- Proteo verification wired up — will run on twice-daily timer after deliveries complete
+- Profile field `parser: unipet_manifest` added to ClientProfile — pipeline branches on this
+- Both profiles loaded and running on VPS: `Loaded 2 client profile(s)`
 
 ### What's been completed this session (2026-04-09, session 8)
 
@@ -481,7 +516,7 @@ LOG_LEVEL=INFO
 - **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
 - **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
-- **Multi-client expansion** — image, Excel, email body input types not built
+- **Multi-client expansion** — Unipet ✅ DONE (session 10). Revolution Beauty and St Regis Reels pending boss sign-off. Smurfit/Wincanton pending sample PDFs.
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
@@ -489,6 +524,8 @@ LOG_LEVEL=INFO
 - **Verification retry tracking** — "not found" jobs are re-attempted by the twice-daily timer indefinitely; no cutoff for permanently cancelled/amended jobs yet (low priority)
 - **Dashboard deployment** — firmin-dashboard is running locally; not yet deployed to a public URL
 - **Drive folder ID on VPS** — ✅ DONE. `DRIVE_FOLDER_ID=1bM-ksJynQjABdLazYAHshvH8_xie5urP` set in `/opt/firmin/.env`
+- **Drive upload quota fix** — ✅ DONE (session 10). Switched from service account to OAuth user credentials. 78 historical rows backfilled.
+- **Proteo JS syntax error** — ✅ DONE (session 10). Python ternary in JS string fixed.
 
 ---
 
