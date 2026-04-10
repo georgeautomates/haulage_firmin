@@ -321,11 +321,12 @@ def main():
         v = v.split("/")[0].strip()
         return v
 
-    # Index actual by (job, client) — keeps Unipet and DS Smith jobs separate
+    # Index actual by delivery_order_number — this is unique per job across all clients
+    # (Unipet stores Delivery Note here; DS Smith stores the job/docket number)
     actual_by_job: dict[str, dict] = {}
     for row in actual_rows:
         job = str(row.get("delivery_order_number", "")).strip()
-        if job:
+        if job and job not in actual_by_job:
             actual_by_job[job] = row
 
     # Index verification by (job, client_type) and (job, po, client_type)
@@ -340,7 +341,8 @@ def main():
     for row in verify_rows:
         ct = client_type(str(row.get("client_name", "")))
         if ct == "unipet":
-            # For Unipet: join on order_number (= Customer Order = Proteo Order No)
+            # Unipet: Actual Entry delivery_order_number = Proteo Load Number (e.g. 36259)
+            # Verification order_number = getText(13) = Load Number — same value, correct join key
             job = str(row.get("order_number", "")).strip()
         else:
             job = str(row.get("delivery_order_number", "")).strip()
@@ -363,7 +365,7 @@ def main():
             actual_unmatched.append(job)
 
     only_actual = actual_unmatched
-    only_verify = sorted(set(verify_by_job) - set(actual_by_job))
+    only_verify = sorted({job for job, ct in verify_by_job} - set(actual_by_job))
 
     exact_count    = sum(1 for _, _, m in matched_jobs if m == "exact")
     job_only_count = sum(1 for _, _, m in matched_jobs if m == "job_only")
