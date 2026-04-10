@@ -91,7 +91,7 @@ class Pipeline:
             logger.info("Processing attachment: %s", attachment["filename"])
             pdf_result = extract_pdf(attachment["data"])
 
-            if not pdf_result.job_numbers:
+            if not pdf_result.job_numbers and profile.parser != "unipet_manifest":
                 logger.warning("No job numbers found in %s", attachment["filename"])
                 continue
 
