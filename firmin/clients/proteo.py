@@ -133,31 +133,33 @@ class ProteoClient:
 
                 def telerik_select(input_id: str, value: str, wait_ms: int = 1000):
                     """
-                    Fill a Telerik RadComboBox that has readonly=readonly on its input.
-                    Strategy: click the dropdown arrow button next to the input to open
-                    the list, then click the matching item. Falls back to typing if the
-                    item isn't found in the list (for autocomplete-style combos).
+                    Fill a Telerik RadComboBox (readonly input).
+                    For fixed-option combos (Service): click arrow to open, click matching item.
+                    For autocomplete combos (collection/delivery points): type prefix,
+                    wait for suggestion, press Tab to accept whatever Proteo fills in.
                     """
                     if not value:
                         return
-                    # The arrow button is a sibling <a class="rcbArrowCell"> or <button>
-                    # Telerik wraps the input in a table; the arrow is the next sibling cell.
-                    # Easiest: use JS to trigger the combo open, then type to filter.
                     try:
-                        # Click the input area to activate it
                         page.click(f"#{input_id}", timeout=5000)
-                        page.wait_for_timeout(300)
-                        # Type to filter — works for autocomplete combos (collection/delivery points)
-                        page.keyboard.type(value[:20], delay=50)
-                        page.wait_for_timeout(800)
-                        # Try to click matching item in the dropdown list
+                        page.wait_for_timeout(400)
+                        # Type the first 15 chars to trigger the autocomplete / filter
+                        page.keyboard.type(value[:15], delay=60)
+                        page.wait_for_timeout(1000)
+                        # Try clicking a matching list item first (fixed dropdown)
+                        safe_value = value[:15].replace("'", "\\'")
                         dropdown_item = page.locator(
-                            f".rcbList li:has-text('{value[:20]}')"
+                            f".rcbList li:has-text('{safe_value}')"
                         ).first
-                        if dropdown_item.is_visible(timeout=2000):
-                            dropdown_item.click()
-                        else:
-                            page.keyboard.press("Escape")
+                        try:
+                            if dropdown_item.is_visible(timeout=1500):
+                                dropdown_item.click()
+                                page.wait_for_timeout(wait_ms)
+                                return
+                        except Exception:
+                            pass
+                        # No list item found — press Tab to accept the autocomplete suggestion
+                        page.keyboard.press("Tab")
                         page.wait_for_timeout(wait_ms)
                     except Exception as e:
                         logger.warning("telerik_select failed for %s (%s): %s", input_id, value, e)
@@ -319,19 +321,37 @@ class ProteoClient:
 
                 # ── Field-level comparison ────────────────────────────────────
                 def _norm(s: str) -> str:
-                    return s.strip().lower()
+                    return s.strip().lower().lstrip("£")
 
-                checks = {
-                    "collection_point": (_norm(typed_collection), _norm(collection_point)),
-                    "delivery_point":   (_norm(typed_delivery),   _norm(delivery_point)),
-                    "collection_date":  (_norm(typed_col_date),   _norm(col_date)),
-                    "collection_time":  (_norm(typed_col_time),   _norm(col_time)),
-                    "delivery_date":    (_norm(typed_del_date),   _norm(del_date)),
-                    "delivery_time":    (_norm(typed_del_time),   _norm(del_time)),
-                    "order_number":     (_norm(typed_order),      _norm(order_number)),
-                    "price":            (_norm(typed_price),      _norm(price)),
+                def _point_match(typed: str, planned: str) -> bool:
+                    """
+                    Telerik autocomplete may only fill a partial value (the first
+                    suggestion text). Accept the match if either value contains
+                    the other (case-insensitive), or if they share a 10-char prefix.
+                    """
+                    t, p = _norm(typed), _norm(planned)
+                    if not t or not p:
+                        return False
+                    return t == p or t in p or p in t or t[:10] == p[:10]
+
+                all_checks = {
+                    "collection_point": (_point_match, typed_collection, collection_point),
+                    "delivery_point":   (_point_match, typed_delivery,   delivery_point),
+                    "collection_date":  (None,         typed_col_date,   col_date),
+                    "collection_time":  (None,         typed_col_time,   col_time),
+                    "delivery_date":    (None,         typed_del_date,   del_date),
+                    "delivery_time":    (None,         typed_del_time,   del_time),
+                    "order_number":     (None,         typed_order,      order_number),
+                    "price":            (None,         typed_price,      price),
                 }
-                field_matches = {k: (v[0] == v[1]) for k, v in checks.items() if v[1]}
+                field_matches = {}
+                for k, (fn, typed_val, planned_val) in all_checks.items():
+                    if not planned_val:
+                        continue  # skip fields we didn't have a planned value for
+                    if fn:
+                        field_matches[k] = fn(typed_val, planned_val)
+                    else:
+                        field_matches[k] = _norm(typed_val) == _norm(planned_val)
                 result.field_matches = field_matches
                 agreed = sum(1 for v in field_matches.values() if v)
                 result.agreement_score = round(agreed / len(field_matches) * 100) if field_matches else 0
