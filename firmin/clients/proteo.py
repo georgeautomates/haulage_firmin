@@ -214,12 +214,77 @@ class ProteoClient:
                     page.fill("#ctl00_ContentPlaceHolder1_ucOrder_rntxtPalletSpaces", spaces)
                     page.keyboard.press("Tab")
 
-                # ── Collection Point (Telerik autocomplete) ───────────────────
+                # ── Collection Point (Telerik location picker) ────────────────
+                # This widget uses a different interaction pattern than the service
+                # combo. Typing into the input shows goods-type items (wrong dropdown).
+                # Clicking the arrow opens a location search within the same combo.
                 collection_point = order.get("collection_point", "")
-                telerik_select(
-                    "ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint_Input",
+
+                def location_select(widget_prefix: str, value: str):
+                    """
+                    Select a location in the collection/delivery point Telerik widget.
+                    widget_prefix: e.g. 'ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint'
+                    """
+                    if not value:
+                        return
+                    input_id = f"{widget_prefix}_Input"
+                    arrow_id = f"{widget_prefix}_Arrow"
+                    try:
+                        # Click the arrow button to open the location dropdown
+                        arrow = page.locator(f"#{arrow_id}")
+                        if arrow.is_visible(timeout=3000):
+                            arrow.click()
+                        else:
+                            page.click(f"#{input_id}", timeout=5000)
+                        page.wait_for_timeout(600)
+
+                        # The input should now accept typing to filter locations
+                        input_el = page.locator(f"#{input_id}")
+                        input_el.click()
+                        page.wait_for_timeout(300)
+                        # Clear any existing text, then type the search prefix
+                        page.keyboard.press("Control+a")
+                        page.keyboard.press("Delete")
+                        page.keyboard.type(value[:20], delay=60)
+                        page.wait_for_timeout(1200)
+
+                        # Log items to understand what appeared
+                        try:
+                            items = page.locator(".rcbList li").all_text_contents()
+                            logger.info("location_select items for '%s': %s", value[:20], items[:8])
+                        except Exception:
+                            pass
+
+                        # Try to find and click a matching item
+                        # Try full value, then progressively shorter prefixes
+                        selected = False
+                        for try_len in (20, 15, 10, 7):
+                            prefix = value[:try_len].replace("'", "\\'")
+                            loc = page.locator(f".rcbList li:has-text('{prefix}')").first
+                            try:
+                                if loc.is_visible(timeout=800):
+                                    loc.click()
+                                    page.wait_for_timeout(800)
+                                    selected = True
+                                    break
+                            except Exception:
+                                continue
+
+                        if not selected:
+                            # Accept whatever autocomplete suggestion exists
+                            page.keyboard.press("Tab")
+                            page.wait_for_timeout(800)
+
+                    except Exception as e:
+                        logger.warning("location_select failed for %s (%s): %s", widget_prefix, value, e)
+                        try:
+                            page.keyboard.press("Escape")
+                        except Exception:
+                            pass
+
+                location_select(
+                    "ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint",
                     collection_point,
-                    wait_ms=1000,
                 )
 
                 # ── Collection date / time (Telerik date pickers — use dateInput) ──
@@ -241,12 +306,11 @@ class ProteoClient:
                     page.keyboard.press("Tab")
                     page.wait_for_timeout(200)
 
-                # ── Delivery Point (Telerik autocomplete) ─────────────────────
+                # ── Delivery Point (Telerik location picker) ──────────────────
                 delivery_point = order.get("delivery_point", "")
-                telerik_select(
-                    "ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint_Input",
+                location_select(
+                    "ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint",
                     delivery_point,
-                    wait_ms=1000,
                 )
 
                 # ── Delivery date / time ──────────────────────────────────────
