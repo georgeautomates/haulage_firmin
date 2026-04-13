@@ -213,34 +213,82 @@ class AiExtractionResult:
         )
 
 
+DUAL_MODEL_FIELDS = [
+    "collection_org", "collection_postcode", "collection_date", "collection_time",
+    "delivery_org", "delivery_postcode", "delivery_date", "delivery_time",
+    "price", "order_number", "work_type",
+]
+
+
+@dataclass
+class DualExtractionResult:
+    primary: AiExtractionResult          # gpt-4o
+    secondary: AiExtractionResult        # gpt-4o-mini
+    agreement: dict[str, bool]           # field -> True if both models agree
+    agreement_score: int                 # 0-100 percentage of fields that agree
+
+
 class AiClient:
+    PRIMARY_MODEL = "gpt-4o"
+    SECONDARY_MODEL = "gpt-4o-mini"
+
     def __init__(self):
         if os.getenv("OPENROUTER_API_KEY"):
             api_key = os.getenv("OPENROUTER_API_KEY")
             base_url = "https://openrouter.ai/api/v1"
-            default_model = "openai/gpt-4o"
+            self.primary_model = "openai/gpt-4o"
+            self.secondary_model = "openai/gpt-4o-mini"
         else:
             api_key = os.getenv("OPENAI_API_KEY")
-            base_url = None  # use OpenAI directly
-            default_model = "gpt-4o"
+            base_url = None
+            self.primary_model = os.getenv("AI_EXTRACTION_MODEL", self.PRIMARY_MODEL)
+            self.secondary_model = os.getenv("AI_EXTRACTION_MODEL_2", self.SECONDARY_MODEL)
 
-        self.model = os.getenv("AI_EXTRACTION_MODEL", default_model)
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 
     def extract_job(self, raw_text: str, job_number: str) -> Optional[AiExtractionResult]:
+        """Single-model extraction using the primary model."""
+        return self._run_extraction(raw_text, job_number, self.primary_model)
+
+    def extract_job_dual(self, raw_text: str, job_number: str) -> Optional[DualExtractionResult]:
+        """Run both models and return both results with per-field agreement."""
+        primary = self._run_extraction(raw_text, job_number, self.primary_model)
+        if not primary:
+            return None
+        secondary = self._run_extraction(raw_text, job_number, self.secondary_model)
+        if not secondary:
+            return None
+
+        agreement = {}
+        for f in DUAL_MODEL_FIELDS:
+            v1 = getattr(primary, f, "").strip().lower()
+            v2 = getattr(secondary, f, "").strip().lower()
+            agreement[f] = v1 == v2
+
+        agreed = sum(1 for v in agreement.values() if v)
+        agreement_score = round(agreed / len(DUAL_MODEL_FIELDS) * 100)
+
+        return DualExtractionResult(
+            primary=primary,
+            secondary=secondary,
+            agreement=agreement,
+            agreement_score=agreement_score,
+        )
+
+    def _run_extraction(self, raw_text: str, job_number: str, model: str) -> Optional[AiExtractionResult]:
         job_text = _slice_job_text(raw_text, job_number)
         prompt = EXTRACTION_PROMPT.format(raw_text=job_text, job_number=job_number)
 
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
             )
             content = response.choices[0].message.content or ""
             return _parse_response(content, job_number)
         except Exception as e:
-            logger.error("AI extraction failed for job %s: %s", job_number, e)
+            logger.error("AI extraction failed for job %s (model %s): %s", job_number, model, e)
             return None
 
 

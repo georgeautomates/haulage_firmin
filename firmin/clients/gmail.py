@@ -24,6 +24,7 @@ class EmailMessage:
     message_id: str
     subject: str
     sender: str
+    body: str = ""
     attachments: list[dict] = field(default_factory=list)
     # each attachment: {"filename": str, "data": bytes, "mime_type": str}
 
@@ -95,6 +96,7 @@ class GmailClient:
             subject = headers.get("subject", "")
             sender = headers.get("from", "")
 
+            body = self._extract_body(msg["payload"])
             attachments = []
             self._extract_attachments(service, msg["payload"], message_id, attachments)
 
@@ -102,11 +104,29 @@ class GmailClient:
                 message_id=message_id,
                 subject=subject,
                 sender=sender,
+                body=body,
                 attachments=attachments,
             )
         except Exception as e:
             logger.error("Failed to fetch message %s: %s", message_id, e)
             return None
+
+    def _extract_body(self, payload: dict) -> str:
+        """Extract plain-text body from a Gmail message payload."""
+        # Walk the MIME tree looking for text/plain parts
+        def _walk(part: dict) -> str:
+            mime = part.get("mimeType", "")
+            if mime == "text/plain":
+                data = part.get("body", {}).get("data", "")
+                if data:
+                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            for sub in part.get("parts", []):
+                result = _walk(sub)
+                if result:
+                    return result
+            return ""
+
+        return _walk(payload).strip()
 
     def _extract_attachments(self, service, payload: dict, message_id: str, attachments: list):
         if "parts" in payload:

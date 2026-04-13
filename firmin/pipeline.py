@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from firmin.clients.ai import AiClient, AiExtractionResult
+from firmin.clients.ai import AiClient, AiExtractionResult, DualExtractionResult
 from firmin.clients.drive import DriveClient
 from firmin.clients.pdf import extract_pdf
 from firmin.clients.sheets import SheetsClient
@@ -134,6 +134,7 @@ class Pipeline:
                         profile=profile,
                         pdf_url=pdf_url,
                         email_subject=email.subject,
+                        email_body=email.body,
                     )
                     result.orders.append(order_result)
 
@@ -266,6 +267,7 @@ class Pipeline:
         profile: ClientProfile,
         pdf_url: str = "",
         email_subject: str = "",
+        email_body: str = "",
     ) -> OrderResult:
         # Dedup check
         if self.dedup.order_seen(job_number):
@@ -278,9 +280,9 @@ class Pipeline:
                 skipped_duplicate=True,
             )
 
-        # AI extraction
-        extracted = self.ai.extract_job(raw_text, job_number)
-        if not extracted:
+        # AI extraction — dual model (gpt-4o primary, gpt-4o-mini secondary)
+        dual = self.ai.extract_job_dual(raw_text, job_number)
+        if not dual:
             return OrderResult(
                 job_number=job_number,
                 status="ERROR",
@@ -289,6 +291,7 @@ class Pipeline:
                 skipped_duplicate=False,
                 error="AI extraction failed",
             )
+        extracted = dual.primary
 
         # Location lookup
         client_name = profile.defaults.get("client_name", "")
@@ -353,6 +356,24 @@ class Pipeline:
             "processed_at": now,
             "message_id": message_id,
             "pdf_url": pdf_url,
+            "email_subject": email_subject,
+            "email_body": email_body,
+            # Dual model — secondary (gpt-4o-mini) extraction
+            "m2_collection_org": dual.secondary.collection_org,
+            "m2_collection_postcode": dual.secondary.collection_postcode,
+            "m2_collection_date": dual.secondary.collection_date,
+            "m2_collection_time": dual.secondary.collection_time,
+            "m2_delivery_org": dual.secondary.delivery_org,
+            "m2_delivery_postcode": dual.secondary.delivery_postcode,
+            "m2_delivery_date": dual.secondary.delivery_date,
+            "m2_delivery_time": dual.secondary.delivery_time,
+            "m2_price": dual.secondary.price,
+            "m2_order_number": dual.secondary.order_number,
+            "m2_work_type": dual.secondary.work_type,
+            "model_agreement_score": dual.agreement_score,
+            "model_agreement_fields": ", ".join(
+                f for f, ok in dual.agreement.items() if not ok
+            ) or "ALL_MATCH",
             # Sheets column name mapping
             "rate": extracted.price,
             " goods_type": profile.defaults.get("goods_type", ""),
