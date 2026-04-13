@@ -120,6 +120,10 @@ class ProteoClient:
                 self._login(page)
 
                 page.goto(ADD_ORDER_URL, wait_until="networkidle")
+                page.wait_for_timeout(3000)
+                # Debug: capture what the page looks like and its URL
+                logger.info("RPA: page URL after goto AddOrder: %s", page.url)
+                page.screenshot(path=f"/tmp/rpa_{job_number}_debug.png")
                 # Wait for the business type select to appear — confirms the form is ready
                 page.wait_for_selector(
                     "#ctl00_ContentPlaceHolder1_ucOrder_cboBusinessType",
