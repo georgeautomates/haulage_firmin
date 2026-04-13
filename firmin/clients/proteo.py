@@ -120,23 +120,55 @@ class ProteoClient:
                 self._login(page)
 
                 page.goto(ADD_ORDER_URL, wait_until="networkidle")
-                page.wait_for_timeout(3000)
-                # Debug: capture what the page looks like and its URL
+                page.wait_for_timeout(2000)
                 logger.info("RPA: page URL after goto AddOrder: %s", page.url)
-                page.screenshot(path=f"/tmp/rpa_{job_number}_debug.png")
-                # Wait for the business type select to appear — confirms the form is ready
+
+                # Wait for the business type select — confirms the form is loaded
                 page.wait_for_selector(
                     "#ctl00_ContentPlaceHolder1_ucOrder_cboBusinessType",
                     state="visible",
                     timeout=30000,
                 )
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(500)
 
-                # ── Client — skip filling, csid in the URL already sets client context
-                # The cboClient combobox is a Telerik async widget that requires
-                # server round-trips to populate; the csid param handles this.
+                def telerik_select(input_id: str, value: str, wait_ms: int = 1000):
+                    """
+                    Fill a Telerik RadComboBox that has readonly=readonly on its input.
+                    Strategy: click the dropdown arrow button next to the input to open
+                    the list, then click the matching item. Falls back to typing if the
+                    item isn't found in the list (for autocomplete-style combos).
+                    """
+                    if not value:
+                        return
+                    # The arrow button is a sibling <a class="rcbArrowCell"> or <button>
+                    # Telerik wraps the input in a table; the arrow is the next sibling cell.
+                    # Easiest: use JS to trigger the combo open, then type to filter.
+                    try:
+                        # Click the input area to activate it
+                        page.click(f"#{input_id}", timeout=5000)
+                        page.wait_for_timeout(300)
+                        # Type to filter — works for autocomplete combos (collection/delivery points)
+                        page.keyboard.type(value[:20], delay=50)
+                        page.wait_for_timeout(800)
+                        # Try to click matching item in the dropdown list
+                        dropdown_item = page.locator(
+                            f".rcbList li:has-text('{value[:20]}')"
+                        ).first
+                        if dropdown_item.is_visible(timeout=2000):
+                            dropdown_item.click()
+                        else:
+                            page.keyboard.press("Escape")
+                        page.wait_for_timeout(wait_ms)
+                    except Exception as e:
+                        logger.warning("telerik_select failed for %s (%s): %s", input_id, value, e)
+                        try:
+                            page.keyboard.press("Escape")
+                        except Exception:
+                            pass
 
-                # ── Business Type (select) ───────────────────────────────────
+                # ── Client — skip, csid URL param sets client context already
+
+                # ── Business Type (standard HTML select — works with select_option) ──
                 bt_raw = order.get("business_type", "").lower()
                 bt_val = BUSINESS_TYPE_VALUES.get(bt_raw, "5")  # default Artic Reloads
                 page.select_option(
@@ -145,14 +177,15 @@ class ProteoClient:
                 )
                 page.wait_for_timeout(500)
 
-                # ── Service ──────────────────────────────────────────────────
+                # ── Service (Telerik readonly combo) ─────────────────────────
                 service = order.get("service", "")
-                if service:
-                    page.fill("#ctl00_ContentPlaceHolder1_ucOrder_cboService_Input", service)
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(500)
+                telerik_select(
+                    "ctl00_ContentPlaceHolder1_ucOrder_cboService_Input",
+                    service,
+                    wait_ms=500,
+                )
 
-                # ── Order / Load numbers ──────────────────────────────────────
+                # ── Order / Load numbers (plain text inputs) ──────────────────
                 order_number = order.get("order_number", "")
                 if order_number:
                     page.fill("#ctl00_ContentPlaceHolder1_ucOrder_txtLoadNumber", order_number)
@@ -172,17 +205,15 @@ class ProteoClient:
                     page.fill("#ctl00_ContentPlaceHolder1_ucOrder_rntxtPalletSpaces", spaces)
                     page.keyboard.press("Tab")
 
-                # ── Collection Point (autocomplete combobox) ─────────────────
+                # ── Collection Point (Telerik autocomplete) ───────────────────
                 collection_point = order.get("collection_point", "")
-                if collection_point:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint_Input",
-                        collection_point,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(800)
+                telerik_select(
+                    "ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint_Input",
+                    collection_point,
+                    wait_ms=1000,
+                )
 
-                # ── Collection date / time ────────────────────────────────────
+                # ── Collection date / time (Telerik date pickers — use dateInput) ──
                 col_date = _parse_date(order.get("collection_date", ""))
                 if col_date:
                     page.fill(
@@ -190,6 +221,7 @@ class ProteoClient:
                         col_date,
                     )
                     page.keyboard.press("Tab")
+                    page.wait_for_timeout(200)
 
                 col_time = order.get("collection_time", "")
                 if col_time:
@@ -198,17 +230,15 @@ class ProteoClient:
                         col_time,
                     )
                     page.keyboard.press("Tab")
-                    page.wait_for_timeout(300)
+                    page.wait_for_timeout(200)
 
-                # ── Delivery Point ────────────────────────────────────────────
+                # ── Delivery Point (Telerik autocomplete) ─────────────────────
                 delivery_point = order.get("delivery_point", "")
-                if delivery_point:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint_Input",
-                        delivery_point,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(800)
+                telerik_select(
+                    "ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint_Input",
+                    delivery_point,
+                    wait_ms=1000,
+                )
 
                 # ── Delivery date / time ──────────────────────────────────────
                 del_date = _parse_date(order.get("delivery_date", ""))
@@ -218,6 +248,7 @@ class ProteoClient:
                         del_date,
                     )
                     page.keyboard.press("Tab")
+                    page.wait_for_timeout(200)
 
                 del_time = order.get("delivery_time", "")
                 if del_time:
@@ -226,7 +257,7 @@ class ProteoClient:
                         del_time,
                     )
                     page.keyboard.press("Tab")
-                    page.wait_for_timeout(300)
+                    page.wait_for_timeout(200)
 
                 # ── Rate ──────────────────────────────────────────────────────
                 price = _strip_currency(order.get("price", "") or order.get("rate", ""))
