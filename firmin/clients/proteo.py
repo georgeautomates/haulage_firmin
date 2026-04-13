@@ -340,8 +340,25 @@ class ProteoClient:
                 )
 
                 # ── Delivery Point (Telerik location picker) ──────────────────
-                # Wait for page to fully settle — Telerik AJAX after Escape can
-                # block clicks for several seconds.
+                # After Escape on a multi-item Telerik dropdown, Proteo fires an
+                # AJAX request that shows a loading overlay blocking all interaction.
+                # Wait for the overlay to disappear before proceeding.
+                try:
+                    page.wait_for_function(
+                        """() => {
+                            const overlays = document.querySelectorAll(
+                                '.RadAjaxPanel, .raDiv, [id*="LoadingPanel"]:not([style*="display: none"])'
+                            );
+                            return overlays.length === 0 ||
+                                   [...overlays].every(el => {
+                                       const s = el.style;
+                                       return s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0';
+                                   });
+                        }""",
+                        timeout=20000,
+                    )
+                except Exception:
+                    pass
                 try:
                     page.wait_for_load_state("networkidle", timeout=15000)
                 except Exception:
