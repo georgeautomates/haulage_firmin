@@ -255,40 +255,35 @@ class ProteoClient:
                         except Exception:
                             pass
 
-                        # Try to find and click a matching item.
-                        # Build candidate search strings: full value prefixes + town-only fallback.
-                        # e.g. "Unipet International Ltd - Sittingbourne"
-                        #   → also try "Unipet International" (before " Ltd") and "Sittingbourne" (after " - ")
-                        search_candidates = []
-                        for try_len in (20, 15, 10, 7):
-                            search_candidates.append(value[:try_len])
-                        # Add org name without suffix (before " Ltd", " Limited", " - ")
-                        for sep in (" Ltd", " Limited", " - "):
-                            if sep in value:
-                                search_candidates.append(value.split(sep)[0][:20])
-                                break
-                        # Add town portion (after " - ")
-                        if " - " in value:
-                            search_candidates.append(value.split(" - ", 1)[1][:15])
+                        # Count visible items to decide strategy:
+                        # - 1 item: safe to Tab-accept (unambiguous match)
+                        # - >1 items: Escape to close, then Tab (accept autocomplete text in input)
+                        # - 0 items: Escape, field stays empty
+                        # We never click list items directly — clicking can trigger broken PostBacks
+                        # on ambiguous/duplicate Proteo location records (observed with Unipet).
+                        try:
+                            items = page.locator(".rcbList li").all()
+                            item_count = len(items)
+                        except Exception:
+                            item_count = 0
 
-                        selected = False
-                        for candidate in search_candidates:
-                            safe = candidate.replace("'", "\\'")
-                            loc = page.locator(f".rcbList li:has-text('{safe}')").first
-                            try:
-                                if loc.is_visible(timeout=800):
-                                    loc.click()
-                                    page.wait_for_timeout(800)
-                                    selected = True
-                                    logger.info("location_select: clicked item matching '%s'", candidate)
-                                    break
-                            except Exception:
-                                continue
-
-                        if not selected:
-                            logger.warning("location_select: no item matched for '%s', pressing Escape", value)
-                            # Don't Tab — that would accept whatever is highlighted and may navigate.
-                            # Press Escape to close the dropdown and leave the field empty.
+                        if item_count == 1:
+                            logger.info("location_select: 1 item found for '%s', pressing Tab to accept", value[:20])
+                            page.keyboard.press("Tab")
+                            page.wait_for_timeout(800)
+                        elif item_count > 1:
+                            # Close dropdown without selecting, accept whatever the input shows
+                            logger.info("location_select: %d items for '%s', closing dropdown and accepting input text", item_count, value[:20])
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(300)
+                            # Check if the input already has a value from the first autocomplete suggestion
+                            input_val = page.locator(f"#{input_id}").input_value()
+                            if not input_val.strip():
+                                # Nothing in the input — Tab to accept the first suggestion
+                                page.keyboard.press("Tab")
+                                page.wait_for_timeout(500)
+                        else:
+                            logger.warning("location_select: no items found for '%s', pressing Escape", value[:20])
                             page.keyboard.press("Escape")
                             page.wait_for_timeout(500)
 
