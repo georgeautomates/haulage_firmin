@@ -307,6 +307,13 @@ class ProteoClient:
                 # Wait for any post-selection page activity to settle before
                 # filling dates (selecting a location can trigger a partial reload)
                 page.wait_for_load_state("networkidle", timeout=10000)
+                logger.info("RPA: post-collection-select URL: %s", page.url)
+                page.screenshot(path=f"/tmp/rpa_{job_number}_after_collection.png")
+                # Check if the date input is present at all (even if hidden)
+                date_input_count = page.locator(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput"
+                ).count()
+                logger.info("RPA: date input count after collection select: %d", date_input_count)
                 page.wait_for_selector(
                     "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
                     state="visible",
