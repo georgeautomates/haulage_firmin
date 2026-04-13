@@ -72,13 +72,14 @@ def main():
         print("ERROR: email_subject or email_body column not found — add them to the sheet header first.")
         return
 
-    # Collect rows missing email_subject
+    # Collect rows missing email_subject OR email_body
     to_backfill: list[tuple[int, str, str]] = []  # (sheet_row, message_id, job_number)
     for i, row in enumerate(all_values[1:], start=2):
         msg_id  = row[msg_col].strip()  if msg_col  < len(row) else ""
         subject = row[subj_col].strip() if subj_col < len(row) else ""
+        body    = row[body_col].strip() if body_col < len(row) else ""
         job     = row[job_col].strip()  if job_col  < len(row) else f"row{i}"
-        if msg_id and not subject:
+        if msg_id and (not subject or not body):
             to_backfill.append((i, msg_id, job))
 
     print(f"Rows to backfill: {len(to_backfill)}")
