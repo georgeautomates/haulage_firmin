@@ -144,15 +144,28 @@ class RpaEntryPipeline:
             logger.warning("Could not ensure RPA Entry sheet: %s", e)
 
     def _load_seen(self) -> set[str]:
+        """Return job numbers that were successfully processed (success=True only)."""
         try:
             self._ensure_rpa_sheet()
             ws = self.sheets._get_worksheet(SPREADSHEET_ID, RPA_ENTRY_WS)
             headers = ws.row_values(1)
             if "job_number" not in headers:
                 return set()
-            col_idx = headers.index("job_number")
-            values = ws.col_values(col_idx + 1)[1:]
-            return {str(v).strip() for v in values if v}
+            job_col = headers.index("job_number")
+            success_col = headers.index("success") if "success" in headers else -1
+            all_rows = ws.get_all_values()[1:]  # skip header
+            seen = set()
+            for row in all_rows:
+                job = row[job_col].strip() if job_col < len(row) else ""
+                if not job:
+                    continue
+                if success_col >= 0:
+                    success = row[success_col].strip().upper() if success_col < len(row) else ""
+                    if success == "TRUE":
+                        seen.add(job)
+                else:
+                    seen.add(job)
+            return seen
         except Exception as e:
             logger.warning("Could not load RPA Entry sheet: %s", e)
             return set()
