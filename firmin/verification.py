@@ -12,6 +12,33 @@ SPREADSHEET_ID = "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
 VERIFICATION_WS = "Verification"
 RPA_ENTRY_WS    = "RPA Entry"
 
+RPA_ENTRY_HEADERS = [
+    "job_number",
+    "processed_at",
+    "success",
+    "screenshot_url",
+    "agreement_score",
+    "field_matches",
+    "error",
+    "typed_client",
+    "typed_collection_point",
+    "typed_delivery_point",
+    "typed_collection_date",
+    "typed_collection_time",
+    "typed_delivery_date",
+    "typed_delivery_time",
+    "typed_order_number",
+    "typed_price",
+    "planned_collection_point",
+    "planned_delivery_point",
+    "planned_collection_date",
+    "planned_collection_time",
+    "planned_delivery_date",
+    "planned_delivery_time",
+    "planned_order_number",
+    "planned_price",
+]
+
 
 class VerificationPipeline:
     def __init__(self, proteo: ProteoClient, sheets: SheetsClient):
@@ -95,8 +122,30 @@ class RpaEntryPipeline:
         self.drive = drive_client
         self._seen: set[str] = set()
 
+    def _ensure_rpa_sheet(self):
+        """Create the RPA Entry worksheet with headers if it doesn't exist."""
+        try:
+            sh = self.sheets._gc.open_by_key(SPREADSHEET_ID)
+            existing = [ws.title for ws in sh.worksheets()]
+            if RPA_ENTRY_WS not in existing:
+                ws = sh.add_worksheet(title=RPA_ENTRY_WS, rows=1000, cols=len(RPA_ENTRY_HEADERS))
+                ws.append_row(RPA_ENTRY_HEADERS, value_input_option="USER_ENTERED")
+                logger.info("Created '%s' worksheet with headers", RPA_ENTRY_WS)
+            else:
+                # Ensure headers exist in row 1
+                ws = sh.worksheet(RPA_ENTRY_WS)
+                if not ws.row_values(1):
+                    ws.append_row(RPA_ENTRY_HEADERS, value_input_option="USER_ENTERED")
+                    logger.info("Added headers to existing '%s' worksheet", RPA_ENTRY_WS)
+            # Cache the worksheet
+            key = f"{SPREADSHEET_ID}:{RPA_ENTRY_WS}"
+            self.sheets._worksheets[key] = sh.worksheet(RPA_ENTRY_WS)
+        except Exception as e:
+            logger.warning("Could not ensure RPA Entry sheet: %s", e)
+
     def _load_seen(self) -> set[str]:
         try:
+            self._ensure_rpa_sheet()
             ws = self.sheets._get_worksheet(SPREADSHEET_ID, RPA_ENTRY_WS)
             headers = ws.row_values(1)
             if "job_number" not in headers:
