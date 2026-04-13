@@ -112,21 +112,45 @@ class GmailClient:
             return None
 
     def _extract_body(self, payload: dict) -> str:
-        """Extract plain-text body from a Gmail message payload."""
-        # Walk the MIME tree looking for text/plain parts
-        def _walk(part: dict) -> str:
-            mime = part.get("mimeType", "")
-            if mime == "text/plain":
-                data = part.get("body", {}).get("data", "")
-                if data:
-                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-            for sub in part.get("parts", []):
-                result = _walk(sub)
-                if result:
-                    return result
-            return ""
+        """Extract body text from a Gmail message payload.
 
-        return _walk(payload).strip()
+        Prefers text/plain. Falls back to text/html with tags stripped,
+        since many forwarded emails (e.g. DS Smith) are HTML-only.
+        """
+        import re as _re
+
+        def _collect(part: dict, results: dict):
+            mime = part.get("mimeType", "")
+            data = part.get("body", {}).get("data", "")
+            if data:
+                if mime == "text/plain" and "plain" not in results:
+                    results["plain"] = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                elif mime == "text/html" and "html" not in results:
+                    results["html"] = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            for sub in part.get("parts", []):
+                _collect(sub, results)
+
+        results: dict[str, str] = {}
+        _collect(payload, results)
+
+        if "plain" in results:
+            return results["plain"].strip()
+
+        if "html" in results:
+            html = results["html"]
+            # Remove script/style blocks
+            html = _re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=_re.DOTALL | _re.IGNORECASE)
+            # Replace block-level tags with newlines
+            html = _re.sub(r"<br\s*/?>|</p>|</div>|</tr>|</li>", "\n", html, flags=_re.IGNORECASE)
+            # Strip remaining tags
+            html = _re.sub(r"<[^>]+>", "", html)
+            # Decode common HTML entities
+            html = html.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+            # Collapse blank lines
+            html = _re.sub(r"\n{3,}", "\n\n", html)
+            return html.strip()
+
+        return ""
 
     def _extract_attachments(self, service, payload: dict, message_id: str, attachments: list):
         if "parts" in payload:
