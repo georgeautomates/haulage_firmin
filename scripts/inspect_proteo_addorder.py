@@ -98,5 +98,17 @@ with sync_playwright() as p:
     for l in labels:
         print(" ", l)
 
+    # Dump the HTML around the collection point widget specifically
+    print("\n=== COLLECTION POINT WIDGET HTML ===")
+    col_html = page.evaluate("""() => {
+        const el = document.getElementById('ctl00_ContentPlaceHolder1_ucOrder_ucCollectionPoint_cboPoint_Input');
+        if (!el) return 'NOT FOUND';
+        // Walk up to find the containing table/div
+        let parent = el;
+        for (let i = 0; i < 6; i++) parent = parent.parentElement;
+        return parent ? parent.outerHTML.substring(0, 3000) : 'no parent';
+    }""")
+    print(col_html)
+
     browser.close()
     print("\nDone.")
