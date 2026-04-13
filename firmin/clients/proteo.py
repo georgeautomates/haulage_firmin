@@ -146,6 +146,13 @@ class ProteoClient:
                         # Type the first 15 chars to trigger the autocomplete / filter
                         page.keyboard.type(value[:15], delay=60)
                         page.wait_for_timeout(1000)
+                        # Log all items currently visible in the dropdown for debugging
+                        try:
+                            items = page.locator(".rcbList li").all_text_contents()
+                            if items:
+                                logger.info("telerik_select dropdown items for '%s': %s", value[:15], items[:5])
+                        except Exception:
+                            pass
                         # Try clicking a matching list item first (fixed dropdown)
                         safe_value = value[:15].replace("'", "\\'")
                         dropdown_item = page.locator(
