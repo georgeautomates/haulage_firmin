@@ -123,6 +123,8 @@ class Pipeline:
                         message_id=email.message_id,
                         profile=profile,
                         pdf_url=pdf_url,
+                        email_subject=email.subject,
+                        email_body=email.body,
                     )
                     result.orders.append(order_result)
             else:
@@ -162,7 +164,7 @@ class Pipeline:
 
         return result
 
-    def _process_unipet_row(self, row, message_id: str, profile: ClientProfile, pdf_url: str = "") -> OrderResult:
+    def _process_unipet_row(self, row, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
         from firmin.clients.unipet_pdf import UnipetRow
         # Customer Order number is the Proteo-searchable unique identifier (Order No)
         # Delivery Note is Proteo's internal Delivery Order Number
@@ -215,6 +217,8 @@ class Pipeline:
             "processed_at": now,
             "message_id": message_id,
             "pdf_url": pdf_url,
+            "email_subject": email_subject,
+            "email_body": email_body,
             " goods_type": profile.defaults.get("goods_type", ""),
         }
 
