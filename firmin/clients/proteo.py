@@ -287,6 +287,15 @@ class ProteoClient:
                     collection_point,
                 )
 
+                # Wait for any post-selection page activity to settle before
+                # filling dates (selecting a location can trigger a partial reload)
+                page.wait_for_load_state("networkidle", timeout=10000)
+                page.wait_for_selector(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
+                    state="visible",
+                    timeout=15000,
+                )
+
                 # ── Collection date / time (Telerik date pickers — use dateInput) ──
                 col_date = _parse_date(order.get("collection_date", ""))
                 if col_date:
