@@ -240,7 +240,7 @@ class ProteoClient:
 
                         # The input should now accept typing to filter locations
                         input_el = page.locator(f"#{input_id}")
-                        input_el.click()
+                        input_el.click(timeout=8000)
                         page.wait_for_timeout(300)
                         # Clear any existing text, then type the search prefix
                         page.keyboard.press("Control+a")
@@ -340,9 +340,13 @@ class ProteoClient:
                 )
 
                 # ── Delivery Point (Telerik location picker) ──────────────────
-                # Wait for page to settle after collection date/time fills
-                page.wait_for_load_state("networkidle", timeout=8000)
-                page.wait_for_timeout(500)
+                # Wait for page to fully settle — Telerik AJAX after Escape can
+                # block clicks for several seconds.
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(1000)
                 delivery_point = order.get("delivery_point", "")
                 location_select(
                     "ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint",
