@@ -1,4 +1,6 @@
 from __future__ import annotations
+import json
+from datetime import datetime, timezone
 
 from firmin.clients.proteo import ProteoClient
 from firmin.clients.sheets import SheetsClient
@@ -8,6 +10,7 @@ logger = get_logger(__name__)
 
 SPREADSHEET_ID = "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
 VERIFICATION_WS = "Verification"
+RPA_ENTRY_WS    = "RPA Entry"
 
 
 class VerificationPipeline:
@@ -77,3 +80,104 @@ class VerificationPipeline:
             written, skipped, not_found, errors,
         )
         return {"written": written, "skipped": skipped, "not_found": not_found, "errors": errors}
+
+
+class RpaEntryPipeline:
+    """
+    Fills the Proteo AddOrder form for each job using extracted data,
+    takes a screenshot, and writes results to the 'RPA Entry' sheet.
+    Does NOT save the order — dry-run only.
+    """
+
+    def __init__(self, proteo: ProteoClient, sheets: SheetsClient, drive_client=None):
+        self.proteo = proteo
+        self.sheets = sheets
+        self.drive = drive_client
+        self._seen: set[str] = set()
+
+    def _load_seen(self) -> set[str]:
+        try:
+            ws = self.sheets._get_worksheet(SPREADSHEET_ID, RPA_ENTRY_WS)
+            headers = ws.row_values(1)
+            if "job_number" not in headers:
+                return set()
+            col_idx = headers.index("job_number")
+            values = ws.col_values(col_idx + 1)[1:]
+            return {str(v).strip() for v in values if v}
+        except Exception as e:
+            logger.warning("Could not load RPA Entry sheet: %s", e)
+            return set()
+
+    def process_jobs(self, job_orders: list[dict]) -> dict:
+        """
+        Run RPA entry for each order dict. job_orders is a list of order dicts
+        with all extraction fields (collection_point, delivery_point, dates, etc.).
+
+        Returns summary counts.
+        """
+        if not self._seen:
+            self._seen = self._load_seen()
+
+        written = 0
+        skipped = 0
+        errors = 0
+
+        for order in job_orders:
+            job_number = order.get("delivery_order_number") or order.get("job_number", "")
+            if not job_number:
+                continue
+
+            if job_number in self._seen:
+                logger.debug("RPA: skipping already-processed job %s", job_number)
+                skipped += 1
+                continue
+
+            try:
+                rpa = self.proteo.enter_order(order, drive_client=self.drive)
+            except Exception as e:
+                logger.error("RPA: enter_order failed for job %s: %s", job_number, e)
+                errors += 1
+                continue
+
+            now = datetime.now(timezone.utc).isoformat()
+            row = {
+                "job_number":             job_number,
+                "processed_at":           now,
+                "success":                str(rpa.success),
+                "screenshot_url":         rpa.screenshot_url,
+                "typed_client":           rpa.typed_client,
+                "typed_collection_point": rpa.typed_collection_point,
+                "typed_delivery_point":   rpa.typed_delivery_point,
+                "typed_collection_date":  rpa.typed_collection_date,
+                "typed_collection_time":  rpa.typed_collection_time,
+                "typed_delivery_date":    rpa.typed_delivery_date,
+                "typed_delivery_time":    rpa.typed_delivery_time,
+                "typed_order_number":     rpa.typed_order_number,
+                "typed_price":            rpa.typed_price,
+                "agreement_score":        rpa.agreement_score,
+                "field_matches":          json.dumps(rpa.field_matches),
+                "error":                  rpa.error,
+                # Planned (extraction) values for comparison
+                "planned_collection_point": order.get("collection_point", ""),
+                "planned_delivery_point":   order.get("delivery_point", ""),
+                "planned_collection_date":  order.get("collection_date", ""),
+                "planned_collection_time":  order.get("collection_time", ""),
+                "planned_delivery_date":    order.get("delivery_date", ""),
+                "planned_delivery_time":    order.get("delivery_time", ""),
+                "planned_order_number":     order.get("order_number", ""),
+                "planned_price":            order.get("price", "") or order.get("rate", ""),
+            }
+
+            try:
+                self.sheets.append_row(SPREADSHEET_ID, RPA_ENTRY_WS, row)
+                self._seen.add(job_number)
+                written += 1
+            except Exception as e:
+                logger.error("RPA: sheet write failed for job %s: %s", job_number, e)
+                errors += 1
+
+        logger.info(
+            "RPA entry complete — written=%d skipped=%d errors=%d",
+            written, skipped, errors,
+        )
+        return {"written": written, "skipped": skipped, "errors": errors}

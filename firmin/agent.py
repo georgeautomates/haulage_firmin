@@ -17,7 +17,7 @@ from firmin.pipeline import Pipeline
 from firmin.profiles.loader import load_all_profiles, match_profile
 from firmin.utils.dedup import DedupStore
 from firmin.utils.logger import get_logger
-from firmin.verification import VerificationPipeline
+from firmin.verification import VerificationPipeline, RpaEntryPipeline
 
 logger = get_logger(__name__)
 
@@ -72,14 +72,16 @@ def run():
     try:
         proteo = ProteoClient()
         verification = VerificationPipeline(proteo=proteo, sheets=sheets)
-        logger.info("Proteo verification pipeline initialised")
+        rpa_entry = RpaEntryPipeline(proteo=proteo, sheets=sheets, drive_client=drive)
+        logger.info("Proteo verification + RPA entry pipeline initialised")
     except RuntimeError as e:
         logger.warning("Proteo verification disabled: %s", e)
         verification = None
+        rpa_entry = None
 
     while True:
         try:
-            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query, drive)
+            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query, drive, rpa_entry)
         except Exception as e:
             logger.error("Poll cycle error: %s", e, exc_info=True)
 
@@ -87,7 +89,16 @@ def run():
         time.sleep(poll_interval)
 
 
-def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipeline | None, profiles, dedup: DedupStore, query: str, drive: DriveClient | None = None):
+def _poll(
+    gmail: GmailClient,
+    pipeline: Pipeline,
+    verification: VerificationPipeline | None,
+    profiles,
+    dedup: DedupStore,
+    query: str,
+    drive: DriveClient | None = None,
+    rpa_entry: RpaEntryPipeline | None = None,
+):
     emails = gmail.fetch_unread(query=query)
 
     if not emails:
@@ -129,15 +140,24 @@ def _poll(gmail: GmailClient, pipeline: Pipeline, verification: VerificationPipe
             result.errors,
         )
 
-        # Verification: scrape Proteo for each processed job
-        if verification and result.total_jobs > 0:
-            job_numbers = [o.job_number for o in result.orders if not o.skipped_duplicate and not o.error]
-            if job_numbers:
-                logger.info("Running Proteo verification for %d jobs", len(job_numbers))
-                try:
-                    verification.process_jobs(job_numbers)
-                except Exception as e:
-                    logger.error("Verification pipeline error: %s", e, exc_info=True)
+        active_orders = [o for o in result.orders if not o.skipped_duplicate and not o.error]
+        job_numbers = [o.job_number for o in active_orders]
+
+        # Verification: scrape Proteo Find Order for each processed job
+        if verification and job_numbers:
+            logger.info("Running Proteo verification for %d jobs", len(job_numbers))
+            try:
+                verification.process_jobs(job_numbers)
+            except Exception as e:
+                logger.error("Verification pipeline error: %s", e, exc_info=True)
+
+        # RPA entry: fill AddOrder form, screenshot, compare vs extraction
+        if rpa_entry and job_numbers and hasattr(result, "_order_dicts"):
+            logger.info("Running RPA entry for %d jobs", len(job_numbers))
+            try:
+                rpa_entry.process_jobs(result._order_dicts)
+            except Exception as e:
+                logger.error("RPA entry pipeline error: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":

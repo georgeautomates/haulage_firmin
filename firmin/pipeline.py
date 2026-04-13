@@ -31,6 +31,7 @@ class OrderResult:
     delivery_point: str = "—"
     price: str = "—"
     failure_reasons: list = None
+    _order_dict: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.failure_reasons is None:
@@ -42,6 +43,8 @@ class PipelineResult:
     message_id: str
     total_jobs: int
     orders: list[OrderResult] = field(default_factory=list)
+    # Full order dicts (extraction + location lookup) — used by RPA entry pipeline
+    _order_dicts: list[dict] = field(default_factory=list)
 
     @property
     def written(self) -> int:
@@ -139,6 +142,12 @@ class Pipeline:
                         email_body=email.body,
                     )
                     result.orders.append(order_result)
+
+        # Collect full order dicts for RPA entry pipeline
+        result._order_dicts = [
+            o._order_dict for o in result.orders
+            if o._order_dict and not o.skipped_duplicate and not o.error
+        ]
 
         if result.total_jobs > 0 and self.slack:
             slack_orders = [
@@ -414,6 +423,7 @@ class Pipeline:
                 delivery_point=delivery_point,
                 price=extracted.price or "—",
                 failure_reasons=scored.failure_reasons,
+                _order_dict=order,
             )
         except Exception as e:
             logger.error("SHEET WRITE FAILED for job %s (already marked seen — manual recovery needed): %s", job_number, e)
@@ -428,4 +438,5 @@ class Pipeline:
                 delivery_point=delivery_point,
                 price=extracted.price or "—",
                 failure_reasons=scored.failure_reasons,
+                _order_dict=order,
             )
