@@ -67,6 +67,8 @@ def normalise(val: str, field: str = "") -> str:
     if field == "order_number":
         v = re.sub(r'^po-', '', v)
         v = v.split("/")[0].strip()
+    # Collapse multiple spaces early so alias lookups match regardless of spacing
+    v = re.sub(r'\s+', ' ', v).strip()
     # Normalise delivery point: treat Kemsley aliases as equivalent
     if field == "delivery_point":
         kemsley_aliases = {
@@ -173,11 +175,11 @@ def normalise(val: str, field: str = "") -> str:
             "mason landfill - ipswich":    "masons landfill ipswich",
             "masons landfill - ipswich":   "masons landfill ipswich",
             "masons - ipswich":            "masons landfill ipswich",
-            # Enva / Envea — same company, spelling variant
-            "envea  - nottingham":           "enva nottingham",
-            "enva england ltd - nottingham": "enva nottingham",
+            # Enva / Envea / Enva Recycling — same company, spelling variants
             "envea - nottingham":            "enva nottingham",
+            "enva england ltd - nottingham": "enva nottingham",
             "enva - nottingham":             "enva nottingham",
+            "enva recycling - nottingham":   "enva nottingham",
             # Welton Bibby & Baron — with/without Ltd
             "welton bibby & baron - westbury":     "welton bibby baron westbury",
             "welton bibby & baron ltd - westbury": "welton bibby baron westbury",
@@ -216,6 +218,13 @@ def normalise(val: str, field: str = "") -> str:
             # Smurfit Kappa variants
             "smurfit kappa - wrexham": "smurfit kappa wrexham",
             "sk - wrexham":            "smurfit kappa wrexham",
+            # Veolia Liverpool / Gillmoss — same site
+            "veolia - liverpool":          "gillmoss veolia liverpool",
+            "gillmoss (veolia) - liverpool": "gillmoss veolia liverpool",
+            "gillmoss veolia - liverpool":   "gillmoss veolia liverpool",
+            # Woodgreen / Chas Storer Potters Bar — same site
+            "woodgreen timber company ltd - potters bar": "chas storer potters bar",
+            "chas storer - potters bar":                  "chas storer potters bar",
             # Additional Kemsley Mill variants (sub-bays)
             "kemsley mill (a c)":      "kemsley",
             "kemsley mill (b d)":      "kemsley",
@@ -257,8 +266,6 @@ def normalise(val: str, field: str = "") -> str:
             "wh smith - swindon":            "wh smith swindon",
         }
         v = collection_aliases.get(v, v)
-    # Collapse multiple spaces
-    v = re.sub(r'\s+', ' ', v)
     return v
 
 
