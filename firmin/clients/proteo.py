@@ -233,9 +233,9 @@ class ProteoClient:
                         # Click the arrow button to open the location dropdown
                         arrow = page.locator(f"#{arrow_id}")
                         if arrow.is_visible(timeout=3000):
-                            arrow.click()
+                            arrow.click(timeout=8000)
                         else:
-                            page.click(f"#{input_id}", timeout=5000)
+                            page.click(f"#{input_id}", timeout=8000)
                         page.wait_for_timeout(600)
 
                         # The input should now accept typing to filter locations
@@ -340,6 +340,9 @@ class ProteoClient:
                 )
 
                 # ── Delivery Point (Telerik location picker) ──────────────────
+                # Wait for page to settle after collection date/time fills
+                page.wait_for_load_state("networkidle", timeout=8000)
+                page.wait_for_timeout(500)
                 delivery_point = order.get("delivery_point", "")
                 location_select(
                     "ctl00_ContentPlaceHolder1_ucOrder_ucDeliveryPoint_cboPoint",
@@ -347,6 +350,9 @@ class ProteoClient:
                 )
 
                 # ── Delivery date / time ──────────────────────────────────────
+                page.wait_for_load_state("networkidle", timeout=8000)
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
                 del_date = _parse_date(order.get("delivery_date", ""))
                 fill_date(
                     "#ctl00_ContentPlaceHolder1_ucOrder_dteDeliveryFromDate_dateInput",
