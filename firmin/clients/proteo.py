@@ -248,22 +248,15 @@ class ProteoClient:
                         page.keyboard.type(value[:20], delay=60)
                         page.wait_for_timeout(1200)
 
-                        # Log items to understand what appeared
-                        try:
-                            items = page.locator(".rcbList li").all_text_contents()
-                            logger.info("location_select items for '%s': %s", value[:20], items[:8])
-                        except Exception:
-                            pass
-
-                        # Count visible items to decide strategy:
-                        # - 1 item: safe to Tab-accept (unambiguous match)
-                        # - >1 items: Escape to close, then Tab (accept autocomplete text in input)
-                        # - 0 items: Escape, field stays empty
+                        # Count visible items in the ACTIVE dropdown only (not all rcbList elements).
                         # We never click list items directly — clicking can trigger broken PostBacks
                         # on ambiguous/duplicate Proteo location records (observed with Unipet).
                         try:
-                            items = page.locator(".rcbList li").all()
-                            item_count = len(items)
+                            # The active dropdown list is the one that is visible
+                            visible_items = page.locator(".rcbList li:visible").all()
+                            item_count = len(visible_items)
+                            items_text = [el.text_content() or "" for el in visible_items[:8]]
+                            logger.info("location_select items for '%s': %s", value[:20], items_text)
                         except Exception:
                             item_count = 0
 
@@ -303,12 +296,14 @@ class ProteoClient:
                 # filling dates (selecting a location can trigger a partial reload)
                 page.wait_for_load_state("networkidle", timeout=10000)
                 logger.info("RPA: post-collection-select URL: %s", page.url)
-                page.screenshot(path=f"/tmp/rpa_{job_number}_after_collection.png")
-                # Check if the date input is present at all (even if hidden)
                 date_input_count = page.locator(
                     "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput"
                 ).count()
                 logger.info("RPA: date input count after collection select: %d", date_input_count)
+                # Click a neutral area (page body) to close any open dropdowns and
+                # release focus from the location widget before filling date fields
+                page.mouse.click(10, 10)
+                page.wait_for_timeout(500)
                 page.wait_for_selector(
                     "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
                     state="visible",
