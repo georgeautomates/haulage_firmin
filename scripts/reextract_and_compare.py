@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from firmin.clients.ai import AiClient
+from firmin.clients.ai import AiClient, DUAL_MODEL_FIELDS
 from firmin.clients.pdf import extract_pdf
 from firmin.clients.sheets import SheetsClient
 from firmin.clients.supabase import SupabaseClient
@@ -207,7 +207,8 @@ def main():
     print(f"\n  {len(by_pdf_url)} unique PDFs to download\n")
 
     # --- Run re-extraction ---
-    results = []  # list of (job, field, fresh_val, proteo_val, match: bool)
+    results = []  # list of (job, field, fresh_val, fresh_val2, proteo_val, match: bool, match2: bool)
+    agreement_scores: dict[str, int] = {}  # job -> inter-model agreement score
     stats = {"processed": 0, "no_pdf": 0, "ai_fail": 0, "no_proteo": 0}
 
     for pdf_idx, (pdf_url, pdf_rows) in enumerate(by_pdf_url.items(), 1):
@@ -235,14 +236,15 @@ def main():
                 stats["no_proteo"] += 1
                 continue
 
-            # Re-run AI extraction
-            extracted = ai.extract_job(pdf_result.raw_text, job)
-            if not extracted:
+            # Re-run AI extraction — dual model
+            dual = ai.extract_job_dual(pdf_result.raw_text, job)
+            if not dual:
                 print(f"  Job {job}: AI extraction FAILED")
                 stats["ai_fail"] += 1
                 continue
 
-            # Re-run location lookup
+            # Primary (gpt-4o) location lookup
+            extracted = dual.primary
             collection_point = (
                 supa.lookup_location(
                     postcode=extracted.collection_postcode,
@@ -266,18 +268,54 @@ def main():
                 ) or extracted.delivery_org or "UNMATCHED"
             )
 
+            # Secondary (gpt-4o-mini) location lookup
+            extracted2 = dual.secondary
+            collection_point2 = (
+                supa.lookup_location(
+                    postcode=extracted2.collection_postcode,
+                    org_name=extracted2.collection_org,
+                    search=extracted2.collection_search,
+                    known_locations=profile.known_locations,
+                    conditional_locations=conditional_locations,
+                    client_name=client_name,
+                    pdf_address=extracted2.collection_search,
+                ) or "UNMATCHED"
+            )
+            delivery_point2 = (
+                supa.lookup_location(
+                    postcode=extracted2.delivery_postcode,
+                    org_name=extracted2.delivery_org,
+                    search=extracted2.delivery_search,
+                    known_locations=profile.known_locations,
+                    conditional_locations=conditional_locations,
+                    client_name=client_name,
+                    pdf_address=extracted2.delivery_search,
+                ) or extracted2.delivery_org or "UNMATCHED"
+            )
+
             fresh = {
                 "collection_point": collection_point,
                 "delivery_point":   delivery_point,
                 "rate":             extracted.price,
                 "order_number":     extracted.order_number,
             }
+            fresh2 = {
+                "collection_point": collection_point2,
+                "delivery_point":   delivery_point2,
+                "rate":             extracted2.price,
+                "order_number":     extracted2.order_number,
+            }
 
             for label, fresh_col, proteo_col in COMPARE_FIELDS:
-                fv = fresh.get(fresh_col, "")
-                pv = str(proteo.get(proteo_col, "")).strip()
-                match = normalise(fv, label) == normalise(pv, label)
-                results.append((job, label, fv, pv, match))
+                fv  = fresh.get(fresh_col, "")
+                fv2 = fresh2.get(fresh_col, "")
+                pv  = str(proteo.get(proteo_col, "")).strip()
+                match  = normalise(fv,  label) == normalise(pv, label)
+                match2 = normalise(fv2, label) == normalise(pv, label)
+                results.append((job, label, fv, fv2, pv, match, match2))
+
+            # Store agreement score for this job
+            agreement_scores[job] = dual.agreement_score
 
             stats["processed"] += 1
 
@@ -286,39 +324,61 @@ def main():
     print(f"RESULTS  (processed: {stats['processed']} | no_pdf: {stats['no_pdf']} | ai_fail: {stats['ai_fail']} | no_proteo: {stats['no_proteo']})")
     print(SEP)
 
-    field_stats: dict[str, dict] = {label: {"match": 0, "total": 0} for label, _, _ in COMPARE_FIELDS}
-    mismatches: dict[str, list[tuple]] = {label: [] for label, _, _ in COMPARE_FIELDS}
+    field_stats:  dict[str, dict] = {label: {"match": 0, "match2": 0, "total": 0} for label, _, _ in COMPARE_FIELDS}
+    mismatches:   dict[str, list[tuple]] = {label: [] for label, _, _ in COMPARE_FIELDS}
+    mismatches2:  dict[str, list[tuple]] = {label: [] for label, _, _ in COMPARE_FIELDS}
 
-    for job, label, fv, pv, match in results:
+    for job, label, fv, fv2, pv, match, match2 in results:
         field_stats[label]["total"] += 1
         if match:
             field_stats[label]["match"] += 1
         else:
             mismatches[label].append((job, fv, pv))
+        if match2:
+            field_stats[label]["match2"] += 1
+        else:
+            mismatches2[label].append((job, fv2, pv))
 
-    total_jobs   = stats["processed"]
-    full_matches = 0
+    total_jobs    = stats["processed"]
+    full_matches  = 0
+    full_matches2 = 0
 
-    # Count full matches per job
-    job_field_results: dict[str, list[bool]] = {}
-    for job, label, fv, pv, match in results:
-        job_field_results.setdefault(job, []).append(match)
-    for job, field_results in job_field_results.items():
-        if all(field_results):
+    job_field_results:  dict[str, list[bool]] = {}
+    job_field_results2: dict[str, list[bool]] = {}
+    for job, label, fv, fv2, pv, match, match2 in results:
+        job_field_results.setdefault(job,  []).append(match)
+        job_field_results2.setdefault(job, []).append(match2)
+    for job, fr in job_field_results.items():
+        if all(fr):
             full_matches += 1
+    for job, fr in job_field_results2.items():
+        if all(fr):
+            full_matches2 += 1
 
-    print(f"\nJobs processed:  {total_jobs}")
-    print(f"Full match:      {full_matches} ({full_matches/max(total_jobs,1)*100:.1f}%)\n")
+    avg_agreement = (
+        round(sum(agreement_scores.values()) / len(agreement_scores))
+        if agreement_scores else 0
+    )
 
-    field_rates = {}
+    print(f"\nJobs processed:       {total_jobs}")
+    print(f"Full match (gpt-4o):      {full_matches}  ({full_matches/max(total_jobs,1)*100:.1f}%)")
+    print(f"Full match (gpt-4o-mini): {full_matches2} ({full_matches2/max(total_jobs,1)*100:.1f}%)")
+    print(f"Avg model agreement:      {avg_agreement}%\n")
+
+    field_rates  = {}
+    field_rates2 = {}
+    print(f"  {'Field':<25} {'gpt-4o':>10}   {'gpt-4o-mini':>12}")
+    print(f"  {'-'*25} {'-'*10}   {'-'*12}")
     for label, _, _ in COMPARE_FIELDS:
         s = field_stats[label]
-        pct = s["match"] / max(s["total"], 1) * 100
-        field_rates[label] = pct
-        print(f"  {label:<25} {s['match']:>4}/{s['total']:<4}  {pct:.1f}%")
+        pct  = s["match"]  / max(s["total"], 1) * 100
+        pct2 = s["match2"] / max(s["total"], 1) * 100
+        field_rates[label]  = pct
+        field_rates2[label] = pct2
+        print(f"  {label:<25} {s['match']:>4}/{s['total']:<4} {pct:>5.1f}%   {s['match2']:>4}/{s['total']:<4} {pct2:>5.1f}%")
 
-    # Show up to 3 mismatch examples per field
-    print(f"\n{SEP}\nMISMATCH EXAMPLES\n{SEP}")
+    # Show up to 3 mismatch examples per field (primary model only)
+    print(f"\n{SEP}\nMISMATCH EXAMPLES (gpt-4o)\n{SEP}")
     for label, _, _ in COMPARE_FIELDS:
         mm = mismatches[label]
         if not mm:
@@ -337,13 +397,20 @@ def main():
 
     run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     history_row = {
-        "run_at":           run_ts,
-        "jobs_processed":   total_jobs,
-        "full_match_pct":   f"{full_matches/max(total_jobs,1)*100:.1f}",
-        "collection_point_pct": f"{field_rates.get('collection_point', 0):.1f}",
-        "delivery_point_pct":   f"{field_rates.get('delivery_point', 0):.1f}",
-        "price_pct":            f"{field_rates.get('price', 0):.1f}",
-        "order_number_pct":     f"{field_rates.get('order_number', 0):.1f}",
+        "run_at":                    run_ts,
+        "jobs_processed":            total_jobs,
+        "full_match_pct":            f"{full_matches/max(total_jobs,1)*100:.1f}",
+        "collection_point_pct":      f"{field_rates.get('collection_point', 0):.1f}",
+        "delivery_point_pct":        f"{field_rates.get('delivery_point', 0):.1f}",
+        "price_pct":                 f"{field_rates.get('price', 0):.1f}",
+        "order_number_pct":          f"{field_rates.get('order_number', 0):.1f}",
+        # Secondary model (gpt-4o-mini)
+        "m2_full_match_pct":         f"{full_matches2/max(total_jobs,1)*100:.1f}",
+        "m2_collection_point_pct":   f"{field_rates2.get('collection_point', 0):.1f}",
+        "m2_delivery_point_pct":     f"{field_rates2.get('delivery_point', 0):.1f}",
+        "m2_price_pct":              f"{field_rates2.get('price', 0):.1f}",
+        "m2_order_number_pct":       f"{field_rates2.get('order_number', 0):.1f}",
+        "model_agreement_pct":       f"{avg_agreement}",
     }
 
     try:
@@ -361,34 +428,38 @@ def main():
     print(f"\n{SEP}\nRun logged to '{HISTORY_WS}' tab at {run_ts}\n")
 
     # --- Write per-job detail to Re-extraction tab ---
-    # Build per-job summary: one row per job with all field results side-by-side
+    # Build per-job summary: one row per job with both model results
     job_data: dict[str, dict] = {}
-    for job, label, fv, pv, match in results:
+    for job, label, fv, fv2, pv, match, match2 in results:
         if job not in job_data:
             job_data[job] = {}
-        job_data[job][label] = (fv, pv, match)
+        job_data[job][label] = (fv, fv2, pv, match, match2)
 
     reextract_headers = [
-        "run_at", "job_number", "full_match",
-        "collection_point_extracted", "collection_point_proteo", "collection_point_match",
-        "delivery_point_extracted",   "delivery_point_proteo",   "delivery_point_match",
-        "price_extracted",            "price_proteo",            "price_match",
-        "order_number_extracted",     "order_number_proteo",     "order_number_match",
+        "run_at", "job_number", "full_match", "m2_full_match", "model_agreement_score",
+        "collection_point_extracted", "m2_collection_point_extracted", "collection_point_proteo", "collection_point_match", "m2_collection_point_match",
+        "delivery_point_extracted",   "m2_delivery_point_extracted",   "delivery_point_proteo",   "delivery_point_match",   "m2_delivery_point_match",
+        "price_extracted",            "m2_price_extracted",            "price_proteo",            "price_match",            "m2_price_match",
+        "order_number_extracted",     "m2_order_number_extracted",     "order_number_proteo",     "order_number_match",     "m2_order_number_match",
     ]
 
     reextract_rows = []
     for job, fields in job_data.items():
-        cp  = fields.get("collection_point", ("", "", False))
-        dp  = fields.get("delivery_point",   ("", "", False))
-        pr  = fields.get("price",            ("", "", False))
-        on  = fields.get("order_number",     ("", "", False))
-        all_match = all([cp[2], dp[2], pr[2], on[2]])
+        cp = fields.get("collection_point", ("", "", "", False, False))
+        dp = fields.get("delivery_point",   ("", "", "", False, False))
+        pr = fields.get("price",            ("", "", "", False, False))
+        on = fields.get("order_number",     ("", "", "", False, False))
+        all_match  = all([cp[3], dp[3], pr[3], on[3]])
+        all_match2 = all([cp[4], dp[4], pr[4], on[4]])
         reextract_rows.append([
-            run_ts, job, "TRUE" if all_match else "FALSE",
-            cp[0], cp[1], "TRUE" if cp[2] else "FALSE",
-            dp[0], dp[1], "TRUE" if dp[2] else "FALSE",
-            pr[0], pr[1], "TRUE" if pr[2] else "FALSE",
-            on[0], on[1], "TRUE" if on[2] else "FALSE",
+            run_ts, job,
+            "TRUE" if all_match  else "FALSE",
+            "TRUE" if all_match2 else "FALSE",
+            str(agreement_scores.get(job, "")),
+            cp[0], cp[1], cp[2], "TRUE" if cp[3] else "FALSE", "TRUE" if cp[4] else "FALSE",
+            dp[0], dp[1], dp[2], "TRUE" if dp[3] else "FALSE", "TRUE" if dp[4] else "FALSE",
+            pr[0], pr[1], pr[2], "TRUE" if pr[3] else "FALSE", "TRUE" if pr[4] else "FALSE",
+            on[0], on[1], on[2], "TRUE" if on[3] else "FALSE", "TRUE" if on[4] else "FALSE",
         ])
 
     try:
