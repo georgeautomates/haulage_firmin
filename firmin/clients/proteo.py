@@ -120,14 +120,17 @@ class ProteoClient:
                 self._login(page)
 
                 page.goto(ADD_ORDER_URL, wait_until="networkidle")
+                # Wait for the business type select to appear — confirms the form is ready
+                page.wait_for_selector(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_cboBusinessType",
+                    state="visible",
+                    timeout=30000,
+                )
                 page.wait_for_timeout(1000)
 
-                # ── Client ──────────────────────────────────────────────────
-                client_name = order.get("client_name", "")
-                if client_name:
-                    page.fill("#ctl00_ContentPlaceHolder1_ucOrder_cboClient_Input", client_name)
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(800)
+                # ── Client — skip filling, csid in the URL already sets client context
+                # The cboClient combobox is a Telerik async widget that requires
+                # server round-trips to populate; the csid param handles this.
 
                 # ── Business Type (select) ───────────────────────────────────
                 bt_raw = order.get("business_type", "").lower()
@@ -267,7 +270,7 @@ class ProteoClient:
                 )
                 typed_order = read("#ctl00_ContentPlaceHolder1_ucOrder_txtLoadNumber")
                 typed_price = read("#ctl00_ContentPlaceHolder1_ucOrder_rntOrderRate")
-                typed_client = read("#ctl00_ContentPlaceHolder1_ucOrder_cboClient_Input")
+                typed_client = order.get("client_name", "")  # not filled via form, set from extraction
 
                 result.typed_client = typed_client
                 result.typed_collection_point = typed_collection
