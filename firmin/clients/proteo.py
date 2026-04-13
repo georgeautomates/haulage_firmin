@@ -255,25 +255,42 @@ class ProteoClient:
                         except Exception:
                             pass
 
-                        # Try to find and click a matching item
-                        # Try full value, then progressively shorter prefixes
-                        selected = False
+                        # Try to find and click a matching item.
+                        # Build candidate search strings: full value prefixes + town-only fallback.
+                        # e.g. "Unipet International Ltd - Sittingbourne"
+                        #   → also try "Unipet International" (before " Ltd") and "Sittingbourne" (after " - ")
+                        search_candidates = []
                         for try_len in (20, 15, 10, 7):
-                            prefix = value[:try_len].replace("'", "\\'")
-                            loc = page.locator(f".rcbList li:has-text('{prefix}')").first
+                            search_candidates.append(value[:try_len])
+                        # Add org name without suffix (before " Ltd", " Limited", " - ")
+                        for sep in (" Ltd", " Limited", " - "):
+                            if sep in value:
+                                search_candidates.append(value.split(sep)[0][:20])
+                                break
+                        # Add town portion (after " - ")
+                        if " - " in value:
+                            search_candidates.append(value.split(" - ", 1)[1][:15])
+
+                        selected = False
+                        for candidate in search_candidates:
+                            safe = candidate.replace("'", "\\'")
+                            loc = page.locator(f".rcbList li:has-text('{safe}')").first
                             try:
                                 if loc.is_visible(timeout=800):
                                     loc.click()
                                     page.wait_for_timeout(800)
                                     selected = True
+                                    logger.info("location_select: clicked item matching '%s'", candidate)
                                     break
                             except Exception:
                                 continue
 
                         if not selected:
-                            # Accept whatever autocomplete suggestion exists
-                            page.keyboard.press("Tab")
-                            page.wait_for_timeout(800)
+                            logger.warning("location_select: no item matched for '%s', pressing Escape", value)
+                            # Don't Tab — that would accept whatever is highlighted and may navigate.
+                            # Press Escape to close the dropdown and leave the field empty.
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(500)
 
                     except Exception as e:
                         logger.warning("location_select failed for %s (%s): %s", widget_prefix, value, e)
