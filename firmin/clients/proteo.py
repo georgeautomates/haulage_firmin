@@ -296,38 +296,48 @@ class ProteoClient:
                 # filling dates (selecting a location can trigger a partial reload)
                 page.wait_for_load_state("networkidle", timeout=10000)
                 logger.info("RPA: post-collection-select URL: %s", page.url)
-                date_input_count = page.locator(
-                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput"
-                ).count()
-                logger.info("RPA: date input count after collection select: %d", date_input_count)
-                # Click a neutral area (page body) to close any open dropdowns and
-                # release focus from the location widget before filling date fields
-                page.mouse.click(10, 10)
-                page.wait_for_timeout(500)
-                page.wait_for_selector(
-                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
-                    state="visible",
-                    timeout=15000,
-                )
+
+                # Dismiss any open dropdowns by pressing Escape and clicking body
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
+
+                # Debug: log element state
+                date_sel = "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput"
+                el = page.locator(date_sel)
+                logger.info("RPA: date input — count=%d visible=%s", el.count(),
+                            el.is_visible() if el.count() > 0 else "n/a")
 
                 # ── Collection date / time (Telerik date pickers — use dateInput) ──
+                def fill_date(selector: str, value: str, label: str):
+                    """Fill a Telerik date input, using force=True if normal fill is blocked."""
+                    if not value:
+                        return
+                    try:
+                        page.fill(selector, value, timeout=8000)
+                        page.keyboard.press("Tab")
+                        page.wait_for_timeout(200)
+                    except Exception:
+                        logger.warning("RPA: %s normal fill failed, trying force", label)
+                        try:
+                            page.locator(selector).fill(value, force=True, timeout=5000)
+                            page.keyboard.press("Tab")
+                            page.wait_for_timeout(200)
+                        except Exception as e2:
+                            logger.warning("RPA: %s force fill also failed: %s", label, e2)
+
                 col_date = _parse_date(order.get("collection_date", ""))
-                if col_date:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
-                        col_date,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(200)
+                fill_date(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromDate_dateInput",
+                    col_date, "collection_date"
+                )
 
                 col_time = order.get("collection_time", "")
-                if col_time:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromTime_dateInput",
-                        col_time,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(200)
+                fill_date(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteCollectionFromTime_dateInput",
+                    col_time, "collection_time"
+                )
 
                 # ── Delivery Point (Telerik location picker) ──────────────────
                 delivery_point = order.get("delivery_point", "")
@@ -338,22 +348,16 @@ class ProteoClient:
 
                 # ── Delivery date / time ──────────────────────────────────────
                 del_date = _parse_date(order.get("delivery_date", ""))
-                if del_date:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_dteDeliveryFromDate_dateInput",
-                        del_date,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(200)
+                fill_date(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteDeliveryFromDate_dateInput",
+                    del_date, "delivery_date"
+                )
 
                 del_time = order.get("delivery_time", "")
-                if del_time:
-                    page.fill(
-                        "#ctl00_ContentPlaceHolder1_ucOrder_dteDeliveryFromTime_dateInput",
-                        del_time,
-                    )
-                    page.keyboard.press("Tab")
-                    page.wait_for_timeout(200)
+                fill_date(
+                    "#ctl00_ContentPlaceHolder1_ucOrder_dteDeliveryFromTime_dateInput",
+                    del_time, "delivery_time"
+                )
 
                 # ── Rate ──────────────────────────────────────────────────────
                 price = _strip_currency(order.get("price", "") or order.get("rate", ""))
