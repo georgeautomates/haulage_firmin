@@ -391,7 +391,7 @@ If you see an error, check the YAML syntax.
 
 ### Trigger a test
 
-Forward one of the sample emails to the Gmail inbox (`firmin.automate@gmail.com` — confirm with George). Within 1–2 minutes the system will pick it up.
+Forward one of the sample emails to the Gmail inbox (`george.automates.ai@gmail.com`). Within 1–2 minutes the system will pick it up.
 
 Watch the logs:
 ```bash
