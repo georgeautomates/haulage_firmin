@@ -126,6 +126,8 @@ def main():
                         help="Process oldest jobs first (default: newest first)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Fill form + screenshot but skip sheet write")
+    parser.add_argument("--ds-smith-only", action="store_true",
+                        help="Skip Unipet and other non-DS-Smith jobs (safe while Unipet AJAX bug is unfixed)")
     args = parser.parse_args()
 
     sa_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "config/service_account.json")
@@ -143,6 +145,13 @@ def main():
     # Filter to pending jobs
     pending = [o for o in all_orders if o["delivery_order_number"] not in already_done]
     print(f"  {len(pending)} jobs pending RPA entry")
+
+    # Optionally restrict to DS Smith only (skip Unipet while AJAX bug is unfixed)
+    if args.ds_smith_only:
+        before = len(pending)
+        pending = [o for o in pending if "unipet" not in o.get("client_name", "").lower()]
+        skipped_clients = before - len(pending)
+        print(f"  --ds-smith-only: skipped {skipped_clients} non-DS-Smith jobs, {len(pending)} remaining")
 
     if not pending:
         print("Nothing to do.")
