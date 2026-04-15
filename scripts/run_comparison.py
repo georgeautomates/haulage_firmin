@@ -80,6 +80,7 @@ def normalise(val: str, field: str = "") -> str:
             "ds smith paper ltd - sittingbourne",
             "ds smith - kemsley mill",
             "kemsley mill - sittingbourne",
+            "kevin kemsley - sittingbourne",
         }
         if v in kemsley_aliases:
             v = "kemsley"
@@ -138,6 +139,7 @@ def normalise(val: str, field: str = "") -> str:
             # VPK Selby
             "selby (vpk)":               "vpk selby",
             "vpk - selby":               "vpk selby",
+            "vpk packaging - selby":     "vpk selby",
             # VPK Wellington
             "wellington (vpk)":          "vpk wellington",
             "vpk - wellington":          "vpk wellington",
