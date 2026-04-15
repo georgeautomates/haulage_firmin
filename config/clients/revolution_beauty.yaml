@@ -37,6 +37,7 @@ known_locations:
   "WN8 8DY": "Supply Chain Solutions - Skelmersdale"   # Revolution c/o DHL
   "LU5 4RZ": "SUPERDRUG - DUNSTABLE"                   # Superdrug Stores PLC
   "ME11 5JS": "Revolution Beauty - Queenborough ME11"  # Revolution Beauty Kent
+  "NG7 2SD": "Boots UK - Nottingham"                   # Boots UK distribution
 
 confidence_thresholds:
   green: 80
