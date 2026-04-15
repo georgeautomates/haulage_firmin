@@ -80,6 +80,7 @@ coll_post_col    = col("collection_postcode")
 del_post_col     = col("delivery_postcode")
 pallets_col      = col("pallets")
 spaces_col       = col("spaces")
+weight_col       = col("weight")
 
 print(f"Scanning {len(data)} rows...")
 print(f"{'DRY RUN — ' if DRY_RUN else ''}Fixing Revolution Beauty rows\n")
@@ -123,6 +124,12 @@ for i, row in enumerate(data, start=2):
         s = cell(spaces_col)
         if s in ("0", ""):
             changes.append((i, spaces_col, s, str(FULL_LOAD_PALLETS), "spaces 0 → 26"))
+
+    # --- Fix weight if blank ---
+    if weight_col is not None:
+        w = cell(weight_col)
+        if w == "":
+            changes.append((i, weight_col, w, "0", "weight blank → 0"))
 
 print(f"Changes needed: {len(changes)}")
 for row_num, col_idx, old, new, reason in changes:
