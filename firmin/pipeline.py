@@ -337,11 +337,11 @@ class Pipeline:
                     pdf_address="",
                 ) or booking.delivery_postcode
 
-        # Pallets — Full Load = 0 stored, otherwise integer
+        # Pallets — Full Load = 26, otherwise use the integer from the PDF
         try:
-            pallets = int(booking.pallets_raw) if booking.pallets_raw.strip().lower() != "full load" else 0
+            pallets = int(booking.pallets_raw) if booking.pallets_raw.strip().lower() != "full load" else 26
         except ValueError:
-            pallets = 0
+            pallets = 26
 
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         order = {
