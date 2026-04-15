@@ -37,6 +37,7 @@ KNOWN_LOCATIONS = {
     "LU54RZ":  "SUPERDRUG - DUNSTABLE",
     "ME115JS": "Revolution Beauty - Queenborough ME11",
     "DE110BB": "Clipper Logistics - Swadlincote",       # delivery direction
+    "WA150AF": "The HUT.COM Ltd - Altrincham",
 }
 
 COLLECTION_KNOWN = {
