@@ -1,0 +1,43 @@
+client_id: revolution_beauty
+display_name: "Revolution Beauty Ltd"
+
+# Email matching — emails forwarded from John.Johnson@revolutionbeauty.com
+# Subject format: "Booking DD/MM/YY: Location to Location (Load Type)"
+email_filters:
+  subject_contains:
+    - "revolutionbeauty.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+# Custom parser required — one booking per PDF, no DS Smith job numbers
+# Parser must handle:
+#   - Revolution Order: SO-RBL-XXXXXXX / TO-RBL-XXXXX (order reference)
+#   - GXO ID: S4XXXXXXX / T4XXXXXXX (secondary reference)
+#   - Customer Order Reference (when present)
+#   - Business type logic: "Full Load" → General | Part/Full Load
+#                          small pallet count → Firmin Xpress | Vans
+#   - DE11 0BB direction logic:
+#       collecting FROM → GXO (Clipper Logistic) - Swadlincote
+#       delivering TO   → Clipper Logistics - Swadlincote
+parser: "revolution_beauty"
+
+defaults:
+  client_name: "Revolution Beauty Ltd"
+  service: "Full Load"
+  goods_type: "Palletised"
+  weight: 0
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+# Known location overrides — confirmed from Proteo screenshots
+# DE11 0BB is NOT listed here — handled in parser due to direction-dependent naming
+known_locations:
+  "WN8 8DY": "Supply Chain Solutions - Skelmersdale"   # Revolution c/o DHL
+  "LU5 4RZ": "SUPERDRUG - DUNSTABLE"                   # Superdrug Stores PLC
+  "ME11 5JS": "Revolution Beauty - Queenborough ME11"  # Revolution Beauty Kent
+
+confidence_thresholds:
+  green: 80
+  yellow: 50
