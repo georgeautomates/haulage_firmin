@@ -166,6 +166,12 @@ def normalise(val: str, field: str = "") -> str:
             # Cullompton (Higher Kings Mill)
             "higher kings mill - cullompton":      "cullompton",
             "higher kings mill":                   "cullompton",
+            # Swadlincote — GXO / Clipper name variants
+            "gxo (clipper logistic) - swadlincote": "clipper swadlincote",
+            "clipper logistics - swadlincote":       "clipper swadlincote",
+            # Superdrug Dunstable — with/without (Beds) suffix
+            "superdrug - dunstable":               "superdrug dunstable",
+            "superdrug - dunstable (beds)":        "superdrug dunstable",
         }
         v = delivery_aliases.get(v, v)
 
@@ -259,6 +265,9 @@ def normalise(val: str, field: str = "") -> str:
             # Boxes & Pack Bristol
             "bristol (boxes & pack)":        "boxes and pack bristol",
             "boxes & pack - bristol":        "boxes and pack bristol",
+            # Swadlincote — GXO / Clipper name variants (Revolution Beauty collection)
+            "gxo (clipper logistic) - swadlincote": "clipper swadlincote",
+            "clipper logistics - swadlincote":       "clipper swadlincote",
             # Green Recycling Maldon
             "maldon (green recycling)":      "green recycling maldon",
             "green recycling - maldon":      "green recycling maldon",
