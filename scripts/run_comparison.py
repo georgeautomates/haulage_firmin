@@ -343,6 +343,8 @@ def main():
         n = name.lower()
         if "unipet" in n:
             return "unipet"
+        if "revolution beauty" in n:
+            return "revolution_beauty"
         return "dssmith"
 
     verify_by_job_po: dict[tuple, dict] = {}
