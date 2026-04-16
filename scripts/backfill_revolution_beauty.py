@@ -38,6 +38,7 @@ KNOWN_LOCATIONS = {
     "ME115JS": "Revolution Beauty - Queenborough ME11",
     "DE110BB": "Clipper Logistics - Swadlincote",       # delivery direction
     "WA150AF": "The HUT.COM Ltd - Altrincham",
+    "DL30PS":  "Steadhouse Savers - Darlington",
 }
 
 COLLECTION_KNOWN = {
