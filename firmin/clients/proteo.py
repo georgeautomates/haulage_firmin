@@ -534,8 +534,12 @@ class ProteoClient:
                 # Navigate to Find Order
                 page.goto(FIND_ORDER_URL, wait_until="networkidle")
 
+                # Strip Revolution Beauty prefix — Proteo searches by numeric part only
+                # e.g. SO-RBL-6544544 → 6544544, TO-RBL-12345 → 12345
+                search_term = re.sub(r'^[ST]O-RBL-', '', job_number)
+
                 # Search
-                page.fill('input[id="ctl00_txtSearchString"]', job_number)
+                page.fill('input[id="ctl00_txtSearchString"]', search_term)
                 page.keyboard.press("Enter")
                 page.wait_for_load_state("networkidle")
 
@@ -615,6 +619,12 @@ class ProteoClient:
                         job_number, row_data.get("client_name"),
                     )
                     return None
+
+                # For Revolution Beauty: override delivery_order_number with the
+                # SO-RBL/TO-RBL job number so the comparison join works correctly
+                # (Proteo stores a GXO reference in that column, not the SO-RBL number)
+                if re.match(r'^[ST]O-RBL-', job_number):
+                    row_data["delivery_order_number"] = job_number
 
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
                 logger.debug("Proteo: extracted job %s -> order_id=%s client=%s", job_number, row_data["order_id"], row_data["client_name"])
