@@ -40,11 +40,14 @@ def get_job_numbers(ws: gspread.Worksheet) -> list[str]:
     jobs = []
     for v in values:
         v = str(v).strip()
-        if v:
-            try:
-                jobs.append(str(int(float(v))))
-            except ValueError:
-                pass
+        if not v:
+            continue
+        try:
+            # Normalise numeric job numbers (e.g. "2560920.0" → "2560920")
+            jobs.append(str(int(float(v))))
+        except ValueError:
+            # Non-numeric job numbers (e.g. SO-RBL-XXXXXXX) — include as-is
+            jobs.append(v)
     return jobs
 
 
