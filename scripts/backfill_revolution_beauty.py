@@ -39,6 +39,7 @@ KNOWN_LOCATIONS = {
     "DE110BB": "Clipper Logistics - Swadlincote",       # delivery direction
     "WA150AF": "The HUT.COM Ltd - Altrincham",
     "DL30PS":  "Steadhouse Savers - Darlington",
+    "S668EL":  "Superdrug Stores PLC - Rotherham",
 }
 
 COLLECTION_KNOWN = {

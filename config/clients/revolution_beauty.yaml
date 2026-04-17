@@ -40,6 +40,7 @@ known_locations:
   "NG7 2SD": "Boots UK - Nottingham"                   # Boots UK distribution
   "WA15 0AF": "The HUT.COM Ltd - Altrincham"           # THG / The Hut Group
   "DL3 0PS": "Steadhouse Savers - Darlington"          # Darlington delivery
+  "S66 8EL": "Superdrug Stores PLC - Rotherham"        # Superdrug Rotherham
 
 confidence_thresholds:
   green: 80
