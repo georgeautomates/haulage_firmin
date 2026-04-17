@@ -286,6 +286,7 @@ def normalise_order(val: str) -> str:
     v = val.strip().lower()
     v = re.sub(r'\*+.*$', '', v)      # strip **DEMURRAGE and similar suffixes
     v = re.sub(r'^po-0*', '', v)      # strip PO- prefix and leading zeros: PO-0804282 -> 804282
+    v = re.sub(r'^[st]o-rbl-', '', v) # strip SO-RBL- / TO-RBL- prefix for Revolution Beauty
     v = re.sub(r'^0+', '', v)         # strip leading zeros from plain numbers: 01480107 -> 1480107
     return v.strip()
 
