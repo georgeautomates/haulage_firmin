@@ -63,9 +63,10 @@ def normalise(val: str, field: str = "") -> str:
     else:
         v = re.sub(r'£', '', v)
         v = re.sub(r'\.00$', '', v)
-    # Normalise order number: strip PO- prefix, take part before any / suffix, strip spaces
+    # Normalise order number: strip PO- prefix, SO-RBL- prefix, take part before any / suffix
     if field == "order_number":
         v = re.sub(r'^po-', '', v)
+        v = re.sub(r'^[st]o-rbl-', '', v)
         v = v.split("/")[0].strip()
     # Collapse multiple spaces early so alias lookups match regardless of spacing
     v = re.sub(r'\s+', ' ', v).strip()
