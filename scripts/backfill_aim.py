@@ -37,6 +37,7 @@ KNOWN_LOCATIONS = {
     "PO35JT":  "Condor Logistics - Portsmouth",
     "BS494QN": "Smart Systems - Bristol",
     "B692DF":  "Sheffield Insulations - Oldbury",
+    "GU146SB": "Farnborough College of Technology - Farnborough",
 }
 
 

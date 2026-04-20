@@ -41,6 +41,7 @@ known_locations:
   "PO3 5JT": "Condor Logistics - Portsmouth"
   "BS49 4QN": "Smart Systems - Bristol"
   "B69 2DF": "Sheffield Insulations - Oldbury"
+  "GU14 6SB": "Farnborough College of Technology - Farnborough"
 
 confidence_thresholds:
   green: 80
