@@ -360,6 +360,8 @@ def main():
             return "aim"
         if "community playthings" in n:
             return "community_playthings"
+        if "eurocoils" in n:
+            return "eurocoils"
         return "dssmith"
 
     verify_by_job_po: dict[tuple, dict] = {}

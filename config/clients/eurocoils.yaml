@@ -1,0 +1,29 @@
+client_id: eurocoils
+display_name: "Eurocoils Limited"
+
+email_filters:
+  sender_contains:
+    - "eurocoils.co.uk"
+  subject_contains:
+    - "PO -"
+  has_attachment: true
+  attachment_type: "pdf"
+
+parser: "eurocoils"
+
+defaults:
+  client_name: "Eurocoils Limited"
+  business_type: "Firmin Xpress | Vans"
+  goods_type: "Palletised"
+  collection_point: "Eurocoils - Sittingbourne"
+  collection_postcode: "ME10 3RX"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+known_locations: {}
+
+confidence_thresholds:
+  green: 80
+  yellow: 50
