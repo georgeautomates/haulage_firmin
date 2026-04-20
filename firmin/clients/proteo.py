@@ -638,6 +638,11 @@ class ProteoClient:
                 if re.match(r'^[ST]O-RBL-', job_number):
                     row_data["delivery_order_number"] = job_number
 
+                # For AIM: Docket Number is blank in Proteo, so override with the
+                # AIM PO number (what we searched by) to make the comparison join work
+                if any(kw in client for kw in ("aim", "sig trading")):
+                    row_data["delivery_order_number"] = job_number
+
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
                 logger.debug("Proteo: extracted job %s -> order_id=%s client=%s", job_number, row_data["order_id"], row_data["client_name"])
                 return row_data
