@@ -358,6 +358,8 @@ def main():
             return "revolution_beauty"
         if "aim" in n or "sig trading" in n:
             return "aim"
+        if "community playthings" in n:
+            return "community_playthings"
         return "dssmith"
 
     verify_by_job_po: dict[tuple, dict] = {}

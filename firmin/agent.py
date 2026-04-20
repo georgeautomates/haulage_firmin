@@ -44,12 +44,14 @@ def run():
     profiles = load_all_profiles(clients_dir)
     logger.info("Loaded %d client profile(s)", len(profiles))
 
-    # Build Gmail query from all profile subject_contains filters (OR'd together)
+    # Build Gmail query from all profile subject_contains + sender_contains filters (OR'd together)
     if not gmail_query:
         terms = []
         for p in profiles:
             for kw in p.email_filters.subject_contains:
                 terms.append(f"subject:{kw}")
+            for kw in p.email_filters.sender_contains:
+                terms.append(f"from:{kw}")
         gmail_query = "(" + " OR ".join(terms) + ") is:unread has:attachment"
     logger.info("Gmail query: %s", gmail_query)
 
@@ -114,6 +116,7 @@ def _poll(
             subject=email.subject,
             has_attachment=bool(email.attachments),
             profiles=profiles,
+            sender=email.sender,
         )
 
         if not profile:

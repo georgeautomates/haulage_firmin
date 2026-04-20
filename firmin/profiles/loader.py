@@ -27,6 +27,7 @@ class ConfidenceThresholds:
 @dataclass
 class EmailFilters:
     subject_contains: list[str] = field(default_factory=list)
+    sender_contains: list[str] = field(default_factory=list)
     has_attachment: bool = True
     attachment_type: str = "pdf"
 
@@ -49,6 +50,7 @@ def _parse_profile(data: dict) -> ClientProfile:
     filters_data = data.get("email_filters", {})
     email_filters = EmailFilters(
         subject_contains=filters_data.get("subject_contains", []),
+        sender_contains=filters_data.get("sender_contains", []),
         has_attachment=filters_data.get("has_attachment", True),
         attachment_type=filters_data.get("attachment_type", "pdf"),
     )
@@ -101,6 +103,7 @@ def match_profile(
     subject: str,
     has_attachment: bool,
     profiles: list[ClientProfile],
+    sender: str = "",
 ) -> Optional[ClientProfile]:
     for profile in profiles:
         filters = profile.email_filters
@@ -110,6 +113,10 @@ def match_profile(
 
         if filters.subject_contains:
             if not any(kw.lower() in subject.lower() for kw in filters.subject_contains):
+                continue
+
+        if filters.sender_contains:
+            if not any(kw.lower() in sender.lower() for kw in filters.sender_contains):
                 continue
 
         return profile

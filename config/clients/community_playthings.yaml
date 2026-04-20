@@ -1,0 +1,31 @@
+client_id: community_playthings
+display_name: "Community Playthings"
+
+# Email matching — sender domain is the only reliable filter
+# Senders: communityplaythings@danxcarousel.com, Georgia.Banbury@danxcarousel.com
+email_filters:
+  sender_contains:
+    - "danxcarousel.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+# Two booking types handled by the same parser:
+#   1. Individual delivery notes (Carousel consignment PDFs) — one booking per PDF
+#   2. Turn Schedule (Round Robin) — weekly PDF, generates one row per day (Mon-Fri)
+parser: "community_playthings"
+
+defaults:
+  client_name: "Community Playthings"
+  goods_type: "Palletised"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+# Known delivery locations for individual bookings — add as confirmed from Proteo
+known_locations:
+  "SL6 6AR": "Fennies Nursery - Maidenhead"
+
+confidence_thresholds:
+  green: 80
+  yellow: 50

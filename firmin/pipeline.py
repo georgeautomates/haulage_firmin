@@ -12,6 +12,7 @@ from firmin.clients.supabase import SupabaseClient
 from firmin.clients.unipet_pdf import parse_unipet_manifest
 from firmin.clients.revolution_beauty_pdf import parse_revolution_beauty_booking, collection_point_for, delivery_point_for
 from firmin.clients.aim_pdf import parse_aim_booking
+from firmin.clients.community_playthings_pdf import parse_community_playthings_pdf, CommunityPlaythingsDelivery, CommunityPlaythingsRoundRobin
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -96,7 +97,7 @@ class Pipeline:
             logger.info("Processing attachment: %s", attachment["filename"])
             pdf_result = extract_pdf(attachment["data"])
 
-            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim")
+            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim", "community_playthings")
             if not pdf_result.job_numbers and not custom_parser:
                 logger.warning("No job numbers found in %s", attachment["filename"])
                 continue
@@ -163,6 +164,22 @@ class Pipeline:
                     result.orders.append(order_result)
                 else:
                     logger.warning("AIM parser returned nothing for %s", attachment["filename"])
+            elif profile.parser == "community_playthings":
+                bookings = parse_community_playthings_pdf(pdf_result.raw_text)
+                if bookings:
+                    result.total_jobs += len(bookings)
+                    for booking in bookings:
+                        order_result = self._process_community_playthings_booking(
+                            booking=booking,
+                            message_id=email.message_id,
+                            profile=profile,
+                            pdf_url=pdf_url,
+                            email_subject=email.subject,
+                            email_body=email.body,
+                        )
+                        result.orders.append(order_result)
+                else:
+                    logger.warning("Community Playthings parser returned nothing for %s", attachment["filename"])
             else:
                 for job_number in pdf_result.job_numbers:
                     order_result = self._process_job(
@@ -536,6 +553,123 @@ class Pipeline:
                 price=booking.price or "—",
                 failure_reasons=scored.failure_reasons,
                 _order_dict=order,
+            )
+
+    def _process_community_playthings_booking(self, booking, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
+        if isinstance(booking, CommunityPlaythingsRoundRobin):
+            job_number = booking.job_number
+            if self.dedup.order_seen(job_number):
+                logger.info("Skipping duplicate CP Round Robin: %s", job_number)
+                return OrderResult(job_number=job_number, status="SKIPPED", composite_score=0, written_to_sheet=False, skipped_duplicate=True)
+
+            collection_point = "Community Playthings - Sittingbourne"
+            delivery_point = "Round Robin - Sittingbourne"
+            now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            order = {
+                **profile.defaults,
+                "client_name": profile.defaults.get("client_name", "Community Playthings"),
+                "business_type": "General | Part/Full Load",
+                "service": "Full Load",
+                "job_number": job_number,
+                "delivery_order_number": f"{booking.day_name} Round Robin",
+                "order_number": f"{booking.day_name} Round Robin",
+                "po_number": "",
+                "customer_ref": "",
+                "collection_point": collection_point,
+                "collection_postcode": "ME10 3RN",
+                "collection_date": booking.date,
+                "collection_time": "09:00",
+                "delivery_point": delivery_point,
+                "delivery_postcode": "ME10 3RN",
+                "delivery_date": booking.date,
+                "delivery_time": "09:00",
+                "pallets": 26,
+                "spaces": 26,
+                "weight": "",
+                "price": "",
+                "rate": "",
+                "work_type": "",
+                "processed_at": now,
+                "message_id": message_id,
+                "pdf_url": pdf_url,
+                "email_subject": email_subject,
+                "email_body": email_body,
+            }
+        else:
+            # CommunityPlaythingsDelivery
+            job_number = booking.job_number
+            if self.dedup.order_seen(job_number):
+                logger.info("Skipping duplicate CP delivery: %s", job_number)
+                return OrderResult(job_number=job_number, status="SKIPPED", composite_score=0, written_to_sheet=False, skipped_duplicate=True)
+
+            delivery_point = profile.known_locations.get(booking.delivery_postcode, "")
+            if not delivery_point:
+                delivery_point = self.supabase.lookup_location(
+                    postcode=booking.delivery_postcode,
+                    org_name=booking.delivery_company,
+                    search=booking.delivery_company,
+                    known_locations=profile.known_locations,
+                    conditional_locations=getattr(profile, "conditional_locations", {}),
+                    client_name=profile.defaults.get("client_name", ""),
+                    pdf_address=booking.delivery_company,
+                ) or booking.delivery_postcode
+
+            collection_point = "COMMUNITY PLAYTHINGS - SITTINGBOURNE"
+            now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            order = {
+                **profile.defaults,
+                "client_name": profile.defaults.get("client_name", "Community Playthings"),
+                "business_type": "Firmin Xpress | Vans",
+                "job_number": job_number,
+                "delivery_order_number": job_number,
+                "order_number": booking.order_number,
+                "po_number": booking.order_number,
+                "customer_ref": booking.order_number,
+                "collection_point": collection_point,
+                "collection_postcode": "ME10 3RN",
+                "collection_date": booking.collection_date,
+                "collection_time": booking.collection_time,
+                "delivery_point": delivery_point,
+                "delivery_postcode": booking.delivery_postcode,
+                "delivery_date": booking.delivery_date,
+                "delivery_time": booking.delivery_time,
+                "pallets": booking.packages,
+                "spaces": booking.packages,
+                "weight": booking.weight,
+                "price": "",
+                "rate": "",
+                "work_type": "",
+                "processed_at": now,
+                "message_id": message_id,
+                "pdf_url": pdf_url,
+                "email_subject": email_subject,
+                "email_body": email_body,
+            }
+
+        scored = score_order(order)
+        order["composite_score"] = scored.composite_score
+        order["Composite_score"] = scored.composite_score
+        order["status"] = scored.status
+        order["Status"] = scored.status
+
+        self.dedup.mark_order_seen(job_number, message_id)
+
+        try:
+            self.sheets.append_row(profile.sheets.spreadsheet_id, profile.sheets.worksheet_name, order)
+            logger.info("Community Playthings job %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=True, skipped_duplicate=False,
+                collection_point=collection_point, delivery_point=delivery_point,
+                price="—", failure_reasons=scored.failure_reasons,
+            )
+        except Exception as e:
+            logger.error("SHEET WRITE FAILED for Community Playthings job %s: %s", job_number, e)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=False, skipped_duplicate=False, error=str(e),
+                collection_point=collection_point, delivery_point=delivery_point,
+                price="—", failure_reasons=scored.failure_reasons,
             )
 
     def _process_job(
