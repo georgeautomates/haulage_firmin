@@ -102,7 +102,11 @@ Rules:
   Never use a work type code, time value, or SKM reference as the order_number. \
   Do NOT include customer_ref or work_type here.
 - customer_ref: the reference after the order_number — e.g. the second number in "PO-0808360 / 1773780", \
-  or a SKM code like "SKM-S17211", or a time window like "0700-1300". Empty string if not present.
+  or a SKM code like "SKM-S17211". Do NOT include time windows (like "0700-1300") here — those go in booking_window. Empty string if not present.
+- booking_window: a delivery time window in the format HHMM-HHMM (e.g. "0700-1300", "0600-1800"). \
+  Often appears on the same line or below the order_number/customer_ref. Empty string if not present.
+- traffic_note: any free-text note or instruction for the driver/traffic team — e.g. "HIAB REQUIRED", \
+  "TAIL LIFT", "CALL BEFORE DELIVERY", "NO EARLY DELIVERIES". Empty string if not present.
 - work_type: the short code that appears on the same line as the £ price (X, MIS, KWH, PLA, KFL, HYP etc). Empty string if not present.
 - collection_date and delivery_date: format as DD/MM/YYYY (e.g. 14/04/2026). Never swap collection and delivery dates.
 - collection_time and delivery_time: format as HH:MM using 24-hour time (e.g. 08:00, 13:30).
@@ -129,6 +133,8 @@ Example 1 — standard row with bracketed org name:
     "price": "£300.00",
     "order_number": "PO-0804230",
     "customer_ref": "SKM-S17211",
+    "booking_window": "",
+    "traffic_note": "",
     "work_type": "X"
   }}
 
@@ -150,7 +156,32 @@ Example 2 — plain location name, numeric PO, no customer ref:
     "price": "£490.00",
     "order_number": "1838735",
     "customer_ref": "",
+    "booking_window": "",
+    "traffic_note": "",
     "work_type": "MIS"
+  }}
+
+Example 3 — booking window in customer ref area:
+  PDF text (abbreviated): "99001  17/04/2026 06:00  BRISTOL (SEVERNSIDE)  Harbour Road  BS11 0NX  17/04/2026 14:00  KEMSLEY  Milton Creek Road  ME10 2XF  PO-0809100  1774500  0700-1300  £350.00  X"
+  Output:
+  {{
+    "job_number": "99001",
+    "collection_org": "SEVERNSIDE",
+    "collection_address": "Harbour Road",
+    "collection_postcode": "BS11 0NX",
+    "collection_date": "17/04/2026",
+    "collection_time": "06:00",
+    "delivery_org": "KEMSLEY",
+    "delivery_address": "Milton Creek Road",
+    "delivery_postcode": "ME10 2XF",
+    "delivery_date": "17/04/2026",
+    "delivery_time": "14:00",
+    "price": "£350.00",
+    "order_number": "PO-0809100",
+    "customer_ref": "1774500",
+    "booking_window": "0700-1300",
+    "traffic_note": "",
+    "work_type": "X"
   }}
 
 --- END EXAMPLES ---
@@ -173,6 +204,8 @@ Return ONLY this JSON with no markdown, no backticks, no explanation:
   "price": "",
   "order_number": "",
   "customer_ref": "",
+  "booking_window": "",
+  "traffic_note": "",
   "work_type": ""
 }}
 """
@@ -194,6 +227,8 @@ class AiExtractionResult:
     price: str
     order_number: str
     customer_ref: str
+    booking_window: str
+    traffic_note: str
     work_type: str
 
     @property
@@ -216,7 +251,7 @@ class AiExtractionResult:
 DUAL_MODEL_FIELDS = [
     "collection_org", "collection_postcode", "collection_date", "collection_time",
     "delivery_org", "delivery_postcode", "delivery_date", "delivery_time",
-    "price", "order_number", "work_type",
+    "price", "order_number", "booking_window", "work_type",
 ]
 
 
@@ -300,6 +335,15 @@ def _parse_response(content: str, job_number: str) -> Optional[AiExtractionResul
         logger.error("Failed to parse AI output for job %s: %s\nOutput: %s", job_number, e, content)
         return None
 
+    # Post-process: if booking_window is empty, try to extract HHMM-HHMM from customer_ref
+    booking_window = data.get("booking_window", "")
+    customer_ref = data.get("customer_ref", "")
+    if not booking_window and customer_ref:
+        m = re.search(r'\b(\d{4}-\d{4})\b', customer_ref)
+        if m:
+            booking_window = m.group(1)
+            customer_ref = customer_ref.replace(m.group(1), "").strip(" /").strip()
+
     return AiExtractionResult(
         job_number=data.get("job_number", job_number),
         collection_org=data.get("collection_org", ""),
@@ -314,6 +358,8 @@ def _parse_response(content: str, job_number: str) -> Optional[AiExtractionResul
         delivery_time=data.get("delivery_time", ""),
         price=data.get("price", ""),
         order_number=data.get("order_number", ""),
-        customer_ref=data.get("customer_ref", ""),
+        customer_ref=customer_ref,
+        booking_window=booking_window,
+        traffic_note=data.get("traffic_note", ""),
         work_type=data.get("work_type", ""),
     )

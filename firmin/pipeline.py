@@ -620,6 +620,8 @@ class Pipeline:
             "order_number": extracted.order_number,
             "po_number": extracted.order_number,
             "customer_ref": extracted.customer_ref,
+            "booking_window": extracted.booking_window,
+            "traffic_note": extracted.traffic_note,
             "work_type": extracted.work_type,
             "collection_postcode": extracted.collection_postcode,
             "collection_date": extracted.collection_date,

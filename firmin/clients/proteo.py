@@ -392,10 +392,22 @@ class ProteoClient:
                     page.fill("#ctl00_ContentPlaceHolder1_ucOrder_rntOrderRate", price)
                     page.keyboard.press("Tab")
 
-                # ── Notes — stamp job number so form is identifiable ──────────
+                # ── Traffic Notes ────────────────────────────────────────────
+                # Build from: PDF traffic_note, booking_window, customer_ref
+                note_parts = []
+                traffic_note = order.get("traffic_note", "").strip()
+                booking_window = order.get("booking_window", "").strip()
+                customer_ref = order.get("customer_ref", "").strip()
+                if traffic_note:
+                    note_parts.append(traffic_note)
+                if booking_window:
+                    note_parts.append(f"Window: {booking_window}")
+                if customer_ref:
+                    note_parts.append(f"Ref: {customer_ref}")
+                traffic_notes_value = " | ".join(note_parts) if note_parts else f"Job {job_number}"
                 page.fill(
                     "#ctl00_ContentPlaceHolder1_ucOrder_txtTrafficNotes",
-                    f"RPA dry-run — job {job_number} — DO NOT SAVE",
+                    traffic_notes_value,
                 )
 
                 page.wait_for_timeout(1000)
