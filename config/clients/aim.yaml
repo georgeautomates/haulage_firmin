@@ -4,7 +4,9 @@ display_name: "AIM (SIG Trading Limited)"
 # Email matching — emails from PaulaPhipps@aimlimited.co.uk and customerservice@Aimlimited.co.uk
 email_filters:
   subject_contains:
-    - "aimlimited.co.uk"
+    - "FIRMINS BOOKING"
+    - "BOOKING FIRMINS"
+    - "Purchase order Booking"
   has_attachment: true
   attachment_type: "pdf"
 
