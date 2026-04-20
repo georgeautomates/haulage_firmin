@@ -27,7 +27,20 @@ sheets:
   worksheet_name: "Actual Entry"
 
 # Known delivery locations — add as confirmed from Proteo
-known_locations: {}
+known_locations:
+  "RM13 8HY": "SIG Trading - Rainham"
+  "PR7 7DW": "Encon Nevill Long - Chorley"
+  "BN18 0BD": "Bewi Insulations & Construction Ltd - Arundel"
+  "RM9 6QJ": "Minster Insulation & Drylining - Dagenham"
+  "LS3 1LH": "SCS Building Solutions Ltd - Leeds"
+  "NN6 7GX": "Direct Building Materials Ltd c/o Winvic Construction - Crick"
+  "UB7 8EQ": "Minster Insulation & Drylining - West Drayton"
+  "SE1 5SR": "SIG Trading - London"
+  "NN5 7UW": "MY-Fab LTD - Northampton"
+  "CM13 3XL": "Hilt Material Supplies Ltd - Brentwood"
+  "PO3 5JT": "Condor Logistics - Portsmouth"
+  "BS49 4QN": "Smart Systems - Bristol"
+  "B69 2DF": "Sheffield Insulations - Oldbury"
 
 confidence_thresholds:
   green: 80
