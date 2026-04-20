@@ -1,0 +1,32 @@
+client_id: aim
+display_name: "AIM (SIG Trading Limited)"
+
+# Email matching — emails from PaulaPhipps@aimlimited.co.uk and customerservice@Aimlimited.co.uk
+email_filters:
+  subject_contains:
+    - "aimlimited.co.uk"
+  has_attachment: true
+  attachment_type: "pdf"
+
+# Custom parser — Purchase Order format, one booking per PDF
+# Extracts: PO number, pallets, weight, price, collection/delivery dates, delivery postcode
+parser: "aim"
+
+defaults:
+  client_name: "AIM (SIG Trading Limited)"
+  business_type: "General | Part/Full Load"
+  service: "Full Load"
+  goods_type: "Palletised"
+  collection_point: "AIM Ltd - Crawley"
+  collection_postcode: "RH10 9NH"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+# Known delivery locations — add as confirmed from Proteo
+known_locations: {}
+
+confidence_thresholds:
+  green: 80
+  yellow: 50

@@ -356,6 +356,8 @@ def main():
             return "unipet"
         if "revolution beauty" in n:
             return "revolution_beauty"
+        if "aim" in n or "sig trading" in n:
+            return "aim"
         return "dssmith"
 
     verify_by_job_po: dict[tuple, dict] = {}

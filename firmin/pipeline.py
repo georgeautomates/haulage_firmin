@@ -11,6 +11,7 @@ from firmin.clients.slack import SlackClient
 from firmin.clients.supabase import SupabaseClient
 from firmin.clients.unipet_pdf import parse_unipet_manifest
 from firmin.clients.revolution_beauty_pdf import parse_revolution_beauty_booking, collection_point_for, delivery_point_for
+from firmin.clients.aim_pdf import parse_aim_booking
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -95,7 +96,7 @@ class Pipeline:
             logger.info("Processing attachment: %s", attachment["filename"])
             pdf_result = extract_pdf(attachment["data"])
 
-            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty")
+            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim")
             if not pdf_result.job_numbers and not custom_parser:
                 logger.warning("No job numbers found in %s", attachment["filename"])
                 continue
@@ -147,6 +148,21 @@ class Pipeline:
                     result.orders.append(order_result)
                 else:
                     logger.warning("Revolution Beauty parser returned nothing for %s", attachment["filename"])
+            elif profile.parser == "aim":
+                booking = parse_aim_booking(pdf_result.raw_text)
+                if booking:
+                    result.total_jobs += 1
+                    order_result = self._process_aim_booking(
+                        booking=booking,
+                        message_id=email.message_id,
+                        profile=profile,
+                        pdf_url=pdf_url,
+                        email_subject=email.subject,
+                        email_body=email.body,
+                    )
+                    result.orders.append(order_result)
+                else:
+                    logger.warning("AIM parser returned nothing for %s", attachment["filename"])
             else:
                 for job_number in pdf_result.job_numbers:
                     order_result = self._process_job(
@@ -343,6 +359,10 @@ class Pipeline:
         except ValueError:
             pallets = 26
 
+        # Weight — Full Load = blank, Firmin Xpress = pallets × 50
+        is_full_load = booking.pallets_raw.strip().lower() == "full load" or pallets == 26
+        weight = "" if is_full_load else pallets * 50
+
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         order = {
             **profile.defaults,
@@ -363,6 +383,7 @@ class Pipeline:
             "delivery_time": booking.delivery_time,
             "pallets": pallets,
             "spaces": pallets,
+            "weight": weight,
             "price": "",
             "rate": "",
             "work_type": "",
@@ -412,6 +433,109 @@ class Pipeline:
                 delivery_point=delivery_point,
                 price="—",
                 failure_reasons=scored.failure_reasons,
+            )
+
+    def _process_aim_booking(self, booking, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
+        job_number = booking.job_number
+        if not job_number:
+            job_number = message_id
+
+        if self.dedup.order_seen(job_number):
+            logger.info("Skipping duplicate AIM job: %s", job_number)
+            return OrderResult(
+                job_number=job_number,
+                status="SKIPPED",
+                composite_score=0,
+                written_to_sheet=False,
+                skipped_duplicate=True,
+            )
+
+        # Delivery location lookup — postcode + company name hint
+        delivery_point = profile.known_locations.get(booking.delivery_postcode, "")
+        if not delivery_point:
+            delivery_point = self.supabase.lookup_location(
+                postcode=booking.delivery_postcode,
+                org_name=booking.delivery_company,
+                search=booking.delivery_company,
+                known_locations=profile.known_locations,
+                conditional_locations=getattr(profile, "conditional_locations", {}),
+                client_name=profile.defaults.get("client_name", ""),
+                pdf_address=booking.delivery_company,
+            ) or booking.delivery_postcode
+
+        collection_point = profile.defaults.get("collection_point", "AIM Ltd - Crawley")
+
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        order = {
+            **profile.defaults,
+            "client_name": profile.defaults.get("client_name", "AIM (SIG Trading Limited)"),
+            "job_number": job_number,
+            "delivery_order_number": job_number,
+            "order_number": booking.order_number,
+            "po_number": booking.order_number,
+            "customer_ref": booking.order_number,
+            "collection_point": collection_point,
+            "collection_postcode": profile.defaults.get("collection_postcode", "RH10 9NH"),
+            "collection_date": booking.collection_date,
+            "collection_time": booking.collection_time,
+            "delivery_point": delivery_point,
+            "delivery_postcode": booking.delivery_postcode,
+            "delivery_date": booking.delivery_date,
+            "delivery_time": "09:00",
+            "pallets": booking.pallets,
+            "spaces": booking.pallets,
+            "weight": booking.weight,
+            "price": booking.price,
+            "rate": booking.price,
+            "work_type": "",
+            "processed_at": now,
+            "message_id": message_id,
+            "pdf_url": pdf_url,
+            "email_subject": email_subject,
+            "email_body": email_body,
+        }
+
+        scored = score_order(order)
+        order["composite_score"] = scored.composite_score
+        order["Composite_score"] = scored.composite_score
+        order["status"] = scored.status
+        order["Status"] = scored.status
+
+        self.dedup.mark_order_seen(job_number, message_id)
+
+        try:
+            self.sheets.append_row(
+                profile.sheets.spreadsheet_id,
+                profile.sheets.worksheet_name,
+                order,
+            )
+            logger.info("AIM job %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+            return OrderResult(
+                job_number=job_number,
+                status=scored.status,
+                composite_score=scored.composite_score,
+                written_to_sheet=True,
+                skipped_duplicate=False,
+                collection_point=collection_point,
+                delivery_point=delivery_point,
+                price=booking.price or "—",
+                failure_reasons=scored.failure_reasons,
+                _order_dict=order,
+            )
+        except Exception as e:
+            logger.error("SHEET WRITE FAILED for AIM job %s: %s", job_number, e)
+            return OrderResult(
+                job_number=job_number,
+                status=scored.status,
+                composite_score=scored.composite_score,
+                written_to_sheet=False,
+                skipped_duplicate=False,
+                error=str(e),
+                collection_point=collection_point,
+                delivery_point=delivery_point,
+                price=booking.price or "—",
+                failure_reasons=scored.failure_reasons,
+                _order_dict=order,
             )
 
     def _process_job(
