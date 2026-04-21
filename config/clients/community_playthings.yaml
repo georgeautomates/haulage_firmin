@@ -25,6 +25,7 @@ sheets:
 # Known delivery locations for individual bookings — add as confirmed from Proteo
 known_locations:
   "SL6 6AR": "Fennies Nursery - Maidenhead"
+  "ME15 6BD": "Maidstone YMCA preschool - Maidstone"
   "SY5 8BE": "Hillside House Nursery - Shrewsbury"
 
 confidence_thresholds:

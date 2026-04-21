@@ -34,7 +34,7 @@ ORDERS = [
         "delivery_date":        "10/04/2026",
         "delivery_time":        "09:00",
         "delivery_postcode":    "ME15 6BD",
-        "delivery_point":       "Maidstone YMCA Preschool",   # confirm exact Proteo name
+        "delivery_point":       "Maidstone YMCA preschool - Maidstone",
         "collection_point":     "Community Playthings - Sittingbourne",
         "collection_postcode":  "ME10 3RN",
         "pallets":              25,
