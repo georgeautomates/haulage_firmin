@@ -22,7 +22,17 @@ sheets:
   spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
   worksheet_name: "Actual Entry"
 
-known_locations: {}
+known_locations:
+  "SK13 7AJ": "HB SWS Ltd - Glossop"
+  "SK23 0TQ": "CWS (NW) Ltd - High Peak"
+  "BS1 6AZ": "NG Bailey Ltd - Bristol"
+  "WS11 0DJ": "T Gameson - Cannock"
+  "DL4 1QB": "Air Handling Systems Ltd - Shildon"
+  "SO53 4NF": "VES Andover Ltd - Eastleigh"
+  "AL7 1JQ": "Chapman Ventilation Ltd - Welwyn Garden City"
+  "NP4 0TW": "Parker Environmental Services - Pontypool"
+  "BH24 3AS": "AHS (Specialist Services) - Ringwood"
+  "NN8 5UB": "Johnson & Smith (Licoln) Ltd - Wellingborough"
 
 confidence_thresholds:
   green: 80
