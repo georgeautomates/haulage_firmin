@@ -4,7 +4,7 @@ display_name: "Community Playthings"
 # Email matching — sender domain is the only reliable filter
 # Senders: communityplaythings@danxcarousel.com, Georgia.Banbury@danxcarousel.com
 email_filters:
-  sender_contains:
+  subject_contains:
     - "danxcarousel.com"
   has_attachment: true
   attachment_type: "pdf"

@@ -2,10 +2,9 @@ client_id: eurocoils
 display_name: "Eurocoils Limited"
 
 email_filters:
-  sender_contains:
-    - "eurocoils.co.uk"
   subject_contains:
     - "PO -"
+    - "eurocoils.co.uk"
   has_attachment: true
   attachment_type: "pdf"
 
