@@ -643,6 +643,11 @@ class ProteoClient:
                 if any(kw in client for kw in ("aim", "sig trading")):
                     row_data["delivery_order_number"] = job_number
 
+                # For Community Playthings: Docket is blank for some orders (e.g. 9211151),
+                # so fall back to job_number to keep the comparison join working
+                if "community playthings" in client and not row_data.get("delivery_order_number"):
+                    row_data["delivery_order_number"] = job_number
+
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
                 logger.debug("Proteo: extracted job %s -> order_id=%s client=%s", job_number, row_data["order_id"], row_data["client_name"])
                 return row_data

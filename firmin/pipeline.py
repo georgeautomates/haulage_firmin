@@ -716,7 +716,7 @@ class Pipeline:
                 "client_name": profile.defaults.get("client_name", "Community Playthings"),
                 "business_type": "Firmin Xpress | Vans",
                 "job_number": job_number,
-                "delivery_order_number": job_number,
+                "delivery_order_number": booking.order_number or job_number,
                 "order_number": booking.order_number,
                 "po_number": booking.order_number,
                 "customer_ref": booking.order_number,
