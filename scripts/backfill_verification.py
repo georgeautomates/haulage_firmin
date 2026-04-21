@@ -31,24 +31,37 @@ ACTUAL_WS = "Actual Entry"
 VERIFY_WS = "Verification"
 
 
-def get_job_numbers(ws: gspread.Worksheet) -> list[str]:
+def get_job_numbers(ws: gspread.Worksheet) -> tuple[list[str], dict[str, str]]:
+    """Returns (job_numbers, po_map) where po_map maps delivery_order_number -> po_number."""
     headers = ws.row_values(1)
     if "delivery_order_number" not in headers:
         raise RuntimeError(f"delivery_order_number column not found in {ws.title}")
-    col_idx = headers.index("delivery_order_number")
-    values = ws.col_values(col_idx + 1)[1:]  # skip header
+    don_idx = headers.index("delivery_order_number")
+    po_idx = headers.index("po_number") if "po_number" in headers else -1
+    client_idx = headers.index("client_name") if "client_name" in headers else -1
+
+    rows = ws.get_all_values()[1:]  # skip header
     jobs = []
-    for v in values:
-        v = str(v).strip()
+    po_map = {}
+    for row in rows:
+        v = row[don_idx].strip() if len(row) > don_idx else ""
         if not v:
             continue
         try:
-            # Normalise numeric job numbers (e.g. "2560920.0" → "2560920")
-            jobs.append(str(int(float(v))))
+            v = str(int(float(v)))
         except ValueError:
-            # Non-numeric job numbers (e.g. SO-RBL-XXXXXXX) — include as-is
-            jobs.append(v)
-    return jobs
+            pass
+        jobs.append(v)
+
+        # Build po_map for Eurocoils: search by PO number, match by docket
+        if po_idx >= 0 and client_idx >= 0:
+            client = row[client_idx].strip().lower() if len(row) > client_idx else ""
+            if "eurocoils" in client:
+                po = row[po_idx].strip() if len(row) > po_idx else ""
+                if po:
+                    po_map[v] = po
+
+    return jobs, po_map
 
 
 def main():
@@ -61,11 +74,12 @@ def main():
     sh = sheets._gc.open_by_key(SPREADSHEET_ID)
 
     print("Reading Actual Entry...")
-    actual_jobs = get_job_numbers(sh.worksheet(ACTUAL_WS))
-    print(f"  {len(actual_jobs)} jobs in Actual Entry")
+    actual_jobs, po_map = get_job_numbers(sh.worksheet(ACTUAL_WS))
+    print(f"  {len(actual_jobs)} jobs in Actual Entry ({len(po_map)} Eurocoils with PO map)")
 
     print("Reading Verification...")
-    verify_jobs = set(get_job_numbers(sh.worksheet(VERIFY_WS)))
+    verify_jobs, _ = get_job_numbers(sh.worksheet(VERIFY_WS))
+    verify_jobs = set(verify_jobs)
     print(f"  {len(verify_jobs)} jobs in Verification")
 
     missing = [j for j in actual_jobs if j not in verify_jobs]
@@ -99,7 +113,7 @@ def main():
     verification = VerificationPipeline(proteo=proteo, sheets=sheets)
 
     print(f"\nBackfilling {len(missing_unique)} jobs...")
-    summary = verification.process_jobs(missing_unique)
+    summary = verification.process_jobs(missing_unique, po_numbers=po_map)
 
     print(f"\nDone.")
     print(f"  Written:   {summary['written']}")

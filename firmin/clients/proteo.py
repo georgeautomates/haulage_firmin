@@ -525,10 +525,15 @@ class ProteoClient:
 
         return result
 
-    def scrape_job(self, job_number: str) -> Optional[dict]:
+    def scrape_job(self, job_number: str, search_term: Optional[str] = None, match_docket: Optional[str] = None) -> Optional[dict]:
         """
         Log in to Proteo TMS, search for job_number, extract the order row.
         Returns a dict matching Verification sheet columns, or None if not found.
+
+        search_term: override what is typed into the Proteo search box (e.g. PO number
+                     for Eurocoils, where W/Order No clashes with other clients).
+        match_docket: when set, scan all result rows and return the one whose Docket
+                      column matches this value (used for multi-drop Eurocoils POs).
         """
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -546,9 +551,9 @@ class ProteoClient:
                 # Navigate to Find Order
                 page.goto(FIND_ORDER_URL, wait_until="networkidle")
 
-                # Strip Revolution Beauty prefix — Proteo searches by numeric part only
-                # e.g. SO-RBL-6544544 → 6544544, TO-RBL-12345 → 12345
-                search_term = re.sub(r'^[ST]O-RBL-', '', job_number)
+                # Default search term: strip Revolution Beauty prefix
+                if search_term is None:
+                    search_term = re.sub(r'^[ST]O-RBL-', '', job_number)
 
                 # Search
                 page.fill('input[id="ctl00_txtSearchString"]', search_term)
@@ -562,60 +567,57 @@ class ProteoClient:
                     logger.warning("Proteo: no results table for job %s", job_number)
                     return None
 
-                # Extract first data row
-                row_data = page.evaluate("""() => {
+                # Extract all data rows (needed for multi-drop PO matching)
+                all_rows = page.evaluate("""() => {
                     const rows = document.querySelectorAll('table tr');
-                    let dataRow = null;
+                    const dataRows = [];
 
-                    // Prefer a row with an order link (most reliable)
                     for (const row of rows) {
-                        if (row.querySelector('td a[id*="hypUpdateOrder"]')) {
-                            dataRow = row;
-                            break;
-                        }
-                    }
-                    // Fallback: first tr where first cell looks like a numeric order ID
-                    if (!dataRow) {
-                        for (const row of rows) {
+                        if (!row.querySelector('td a[id*="hypUpdateOrder"]')) {
                             const firstCell = row.querySelector('td');
-                            if (firstCell && /^\\d+$/.test(firstCell.textContent.trim())) {
-                                dataRow = row;
-                                break;
-                            }
+                            if (!firstCell || !/^\\d+$/.test(firstCell.textContent.trim())) continue;
                         }
+                        const cells = row.querySelectorAll('td');
+                        const getText = (i) => cells[i]?.textContent?.trim() || '';
+                        const collectAt = getText(15);
+                        const deliverAt = getText(18);
+                        dataRows.push({
+                            order_id:              getText(0),
+                            client_name:           getText(1),
+                            run_id:                getText(3),
+                            business_type:         getText(4),
+                            rate:                  getText(6),
+                            pallets:               getText(9),
+                            spaces:                getText(10),
+                            weight:                getText(11),
+                            service:               getText(12),
+                            order_number:          getText(13) ? getText(13).split(/\\s+/)[0] : '',
+                            po_number:             getText(13) ? getText(13).split(/\\s+/)[0] : '',
+                            collection_point:      getText(14),
+                            collection_date:       collectAt.split('\\n')[0] || '',
+                            collection_time:       collectAt.split('\\n')[1] || '',
+                            delivery_point:        getText(16),
+                            delivery_postcode:     getText(17),
+                            delivery_date:         deliverAt.split('\\n')[0] || '',
+                            delivery_time:         deliverAt.split('\\n')[1] || '',
+                            delivery_order_number: getText(19),
+                            goods_type:            getText(21),
+                        });
                     }
-
-                    if (!dataRow) return null;
-
-                    const cells = dataRow.querySelectorAll('td');
-                    const getText = (i) => cells[i]?.textContent?.trim() || '';
-
-                    const collectAt = getText(15);
-                    const deliverAt = getText(18);
-
-                    return {
-                        order_id:              getText(0),
-                        client_name:           getText(1),
-                        run_id:                getText(3),
-                        business_type:         getText(4),
-                        rate:                  getText(6),
-                        pallets:               getText(9),
-                        spaces:                getText(10),
-                        weight:                getText(11),
-                        service:               getText(12),
-                        order_number:          getText(13) ? getText(13).split(/\\s+/)[0] : '',
-                        po_number:             getText(13) ? getText(13).split(/\\s+/)[0] : '',
-                        collection_point:      getText(14),
-                        collection_date:       collectAt.split('\\n')[0] || '',
-                        collection_time:       collectAt.split('\\n')[1] || '',
-                        delivery_point:        getText(16),
-                        delivery_postcode:     getText(17),
-                        delivery_date:         deliverAt.split('\\n')[0] || '',
-                        delivery_time:         deliverAt.split('\\n')[1] || '',
-                        delivery_order_number: getText(19),
-                        goods_type:            getText(21),
-                    };
+                    return dataRows;
                 }""")
+
+                # Pick the right row: match by docket if requested, else take first
+                if match_docket and all_rows:
+                    row_data = next(
+                        (r for r in all_rows if str(r.get("delivery_order_number", "")).strip() == str(match_docket)),
+                        None,
+                    )
+                    if not row_data:
+                        logger.warning("Proteo: job %s — no row with docket %s in %d results", job_number, match_docket, len(all_rows))
+                        return None
+                else:
+                    row_data = all_rows[0] if all_rows else None
 
                 if not row_data or not str(row_data.get("order_id", "")).isdigit() or len(str(row_data.get("order_id", ""))) < 5:
                     logger.warning("Proteo: job %s not found in results (order_id=%s)", job_number, row_data.get("order_id") if row_data else None)

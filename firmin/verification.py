@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from datetime import datetime, timezone
+from typing import Optional
 
 from firmin.clients.proteo import ProteoClient
 from firmin.clients.sheets import SheetsClient
@@ -60,10 +61,14 @@ class VerificationPipeline:
             logger.error("Could not load Verification sheet existing jobs: %s", e)
             return set()
 
-    def process_jobs(self, job_numbers: list[str]) -> dict:
+    def process_jobs(self, job_numbers: list[str], po_numbers: Optional[dict] = None) -> dict:
         """
         Scrape Proteo for each job number and write to Verification sheet.
         Skips jobs already present in the sheet.
+
+        po_numbers: optional dict mapping delivery_order_number -> po_number.
+                    When present, Eurocoils jobs are searched by PO number and
+                    matched by docket (W/Order No) to handle multi-drop POs.
         Returns summary counts.
         """
         if not self._seen:
@@ -73,6 +78,7 @@ class VerificationPipeline:
         skipped = 0
         not_found = 0
         errors = 0
+        po_numbers = po_numbers or {}
 
         for job_number in job_numbers:
             if job_number in self._seen:
@@ -81,7 +87,12 @@ class VerificationPipeline:
                 continue
 
             try:
-                row = self.proteo.scrape_job(job_number)
+                po = po_numbers.get(job_number)
+                if po:
+                    # Search by PO number, match the specific drop by W/Order No (docket)
+                    row = self.proteo.scrape_job(job_number, search_term=po, match_docket=job_number)
+                else:
+                    row = self.proteo.scrape_job(job_number)
             except Exception as e:
                 logger.error("Verification: scrape error for job %s: %s", job_number, e)
                 errors += 1
