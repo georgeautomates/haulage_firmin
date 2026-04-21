@@ -362,6 +362,8 @@ def main():
             return "community_playthings"
         if "eurocoils" in n:
             return "eurocoils"
+        if "incontrast" in n or "sti line" in n:
+            return "incontrast"
         return "dssmith"
 
     verify_by_job_po: dict[tuple, dict] = {}

@@ -1,0 +1,31 @@
+client_id: incontrast
+display_name: "STI Line Ltd T/A InContrast"
+
+email_filters:
+  sender_contains:
+    - "sti-group.com"
+  subject_contains:
+    - "Collection for:"
+  has_attachment: true
+  attachment_type: "pdf"
+
+parser: "incontrast"
+
+defaults:
+  client_name: "STI Line Ltd  T/A InContrast"
+  goods_type: "Palletised"
+  collection_point: "INCONTRAST - GILLINGHAM"
+  collection_postcode: "ME8 0SA"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+known_locations:
+  "S80 3EG": "DHL Supply Chain - Worksop S80"
+  "CR0 4RR": "Safestore - Croydon"
+  "DA1 4AL": "Safestore - Crayford"
+
+confidence_thresholds:
+  green: 80
+  yellow: 50
