@@ -675,7 +675,7 @@ class Pipeline:
                 "collection_date": booking.date,
                 "collection_time": "09:00",
                 "delivery_point": delivery_point,
-                "delivery_postcode": "ME10 3RN",
+                "delivery_postcode": "ME10 3BF",
                 "delivery_date": booking.date,
                 "delivery_time": "09:00",
                 "pallets": 26,
@@ -709,7 +709,7 @@ class Pipeline:
                     pdf_address=booking.delivery_company,
                 ) or booking.delivery_postcode
 
-            collection_point = "COMMUNITY PLAYTHINGS - SITTINGBOURNE"
+            collection_point = "Community Playthings - Sittingbourne"
             now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
             order = {
                 **profile.defaults,
