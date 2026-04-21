@@ -594,17 +594,18 @@ class Pipeline:
             ) or booking.delivery_postcode
 
         collection_point = profile.defaults.get("collection_point", "Eurocoils - Sittingbourne")
+        collection_postcode = profile.defaults.get("collection_postcode", "ME10 3RX")
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         order = {
             **profile.defaults,
             "client_name": profile.defaults.get("client_name", "Eurocoils Limited"),
             "job_number": job_number,
             "delivery_order_number": job_number,
-            "order_number": booking.po_number,
+            "order_number": job_number,   # W/Order No — matches Verification order_number
             "po_number": booking.po_number,
             "customer_ref": booking.customer_ref,
             "collection_point": collection_point,
-            "collection_postcode": profile.defaults.get("collection_postcode", "ME10 3RX"),
+            "collection_postcode": collection_postcode,
             "collection_date": booking.collection_date,
             "collection_time": "09:00",
             "delivery_point": delivery_point,
@@ -635,6 +636,35 @@ class Pipeline:
         try:
             self.sheets.append_row(profile.sheets.spreadsheet_id, profile.sheets.worksheet_name, order)
             logger.info("Eurocoils job %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+
+            # Write directly to Verification — Proteo search by W/Order No returns
+            # Pallet Track results (number clash), so we bypass Proteo scraping
+            try:
+                verification_row = {
+                    "order_id": "",
+                    "client_name": profile.defaults.get("client_name", "Eurocoils Limited"),
+                    "business_type": profile.defaults.get("business_type", "Firmin Xpress | Vans"),
+                    "pallets": booking.pallets,
+                    "spaces": booking.pallets,
+                    "weight": "",
+                    "order_number": job_number,
+                    "po_number": booking.po_number,
+                    "collection_point": collection_point,
+                    "collection_date": booking.collection_date,
+                    "collection_time": "09:00",
+                    "delivery_point": delivery_point,
+                    "delivery_postcode": booking.delivery_postcode,
+                    "delivery_date": booking.delivery_date,
+                    "delivery_time": "09:00",
+                    "delivery_order_number": job_number,
+                    " goods_type": profile.defaults.get("goods_type", "Palletised"),
+                    "processed_at": now,
+                }
+                self.sheets.append_row(profile.sheets.spreadsheet_id, "Verification", verification_row)
+                logger.info("Eurocoils job %s written to Verification", job_number)
+            except Exception as ve:
+                logger.warning("Eurocoils Verification write failed for job %s: %s", job_number, ve)
+
             return OrderResult(
                 job_number=job_number, status=scored.status, composite_score=scored.composite_score,
                 written_to_sheet=True, skipped_duplicate=False,
