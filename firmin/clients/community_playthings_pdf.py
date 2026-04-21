@@ -166,7 +166,7 @@ def parse_community_playthings_pdf(raw_text: str) -> list:
     text = re.sub(r'\r\n|\r', '\n', raw_text)
 
     # Detect booking type
-    if "Turn Schedule" in text:
+    if "turn schedule" in text.lower():
         return _parse_turn_schedule(text)
     else:
         result = _parse_delivery_note(text)

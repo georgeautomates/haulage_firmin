@@ -29,7 +29,8 @@ _PO_HEADER_RE = re.compile(r'OFFICIAL\s+ORDER\s*\n+\s*(\d{5})', re.IGNORECASE)
 _PO_DIGIT_RE = re.compile(r'\b(5\d{4})\b')  # fallback: 5-digit starting with 5
 
 # W/Order No in item description header row of Delivery Note
-_WORDER_RE = re.compile(r'W/Order\s+No\s+(\d+)', re.IGNORECASE)
+# Also handles "Works O/No 46417/1" variant (top-left client ref box)
+_WORDER_RE = re.compile(r'(?:W/Order\s+No|Works\s+O/No)\s+(\d+)', re.IGNORECASE)
 
 # YOUR ORDER + DATE — may be on same line or split across lines
 _YOUR_ORDER_DATE_RE = re.compile(

@@ -60,7 +60,7 @@ def _extract_with_pdfplumber(data: bytes) -> str:
             for page in pdf.pages:
                 page_text = page.extract_text() or ""
                 pages.append(page_text)
-            return "\n".join(pages)
+            return "\f".join(pages)
     except Exception as e:
         logger.warning("pdfplumber failed: %s", e)
         return ""
@@ -71,7 +71,7 @@ def _extract_with_pymupdf(data: bytes) -> str:
         doc = fitz.open(stream=data, filetype="pdf")
         pages = [doc[i].get_text() for i in range(len(doc))]
         doc.close()
-        return "\n".join(pages)
+        return "\f".join(pages)
     except Exception as e:
         logger.error("PyMuPDF failed: %s", e)
         return ""
