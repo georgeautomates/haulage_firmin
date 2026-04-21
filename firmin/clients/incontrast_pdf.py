@@ -32,8 +32,8 @@ _HEADER_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Split into job blocks on "JOB No." header
-_JOB_SPLIT_RE = re.compile(r'JOB\s+No\.?\s+Details', re.IGNORECASE)
+# Split into job blocks on "JOB No." header (may or may not be followed by "Details")
+_JOB_SPLIT_RE = re.compile(r'JOB\s+No\.?', re.IGNORECASE)
 
 # JOB No value: first numeric line after the block starts
 _JOB_NO_RE = re.compile(r'^(\d{5,})\s*$', re.MULTILINE)
@@ -179,7 +179,7 @@ def parse_incontrast_pdf(raw_text: str) -> list[InContrastBooking]:
     # Split into job blocks
     parts = _JOB_SPLIT_RE.split(text)
     if len(parts) <= 1:
-        logger.warning("InContrast: no job blocks found in PDF")
+        logger.warning("InContrast: no job blocks found in PDF — raw text sample: %r", text[:300])
         return []
 
     results = []
