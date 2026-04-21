@@ -49,7 +49,7 @@ def run():
         terms = []
         for p in profiles:
             for kw in p.email_filters.subject_contains:
-                terms.append(f"subject:{kw}")
+                terms.append(f'subject:"{kw}"')
             for kw in p.email_filters.sender_contains:
                 terms.append(f"from:{kw}")
         gmail_query = "(" + " OR ".join(terms) + ") is:unread has:attachment"
