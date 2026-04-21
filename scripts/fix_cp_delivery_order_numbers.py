@@ -40,7 +40,6 @@ def main():
 
     headers = sheet.row_values(1)
     try:
-        job_col = headers.index("job_number") + 1
         don_col = headers.index("delivery_order_number") + 1
     except ValueError as e:
         print(f"ERROR: column not found — {e}")
@@ -49,14 +48,10 @@ def main():
     rows = sheet.get_all_values()
     fixed = 0
     for i, row in enumerate(rows[1:], start=2):  # skip header, 1-indexed
-        jn = row[job_col - 1].strip() if len(row) >= job_col else ""
-        if jn in FIXES:
-            correct = FIXES[jn]
-            current = row[don_col - 1].strip() if len(row) >= don_col else ""
-            if current == correct:
-                print(f"  SKIP (already correct): {jn} -> {correct}")
-                continue
-            print(f"  {'WOULD FIX' if DRY_RUN else 'FIXING'}: row {i} job {jn}: '{current}' -> '{correct}'")
+        current = row[don_col - 1].strip() if len(row) >= don_col else ""
+        if current in FIXES:
+            correct = FIXES[current]
+            print(f"  {'WOULD FIX' if DRY_RUN else 'FIXING'}: row {i}: '{current}' -> '{correct}'")
             if not DRY_RUN:
                 sheet.update_cell(i, don_col, correct)
             fixed += 1
