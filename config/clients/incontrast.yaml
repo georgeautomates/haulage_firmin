@@ -2,8 +2,6 @@ client_id: incontrast
 display_name: "STI Line Ltd T/A InContrast"
 
 email_filters:
-  sender_contains:
-    - "sti-group.com"
   subject_contains:
     - "Collection for:"
   has_attachment: true
