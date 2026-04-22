@@ -110,6 +110,7 @@ def _poll(
     for email in emails:
         if dedup.email_seen(email.message_id):
             logger.debug("Email already processed: %s", email.message_id)
+            gmail.mark_as_read(email.message_id)
             continue
 
         profile = match_profile(
