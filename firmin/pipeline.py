@@ -35,6 +35,8 @@ class OrderResult:
     collection_point: str = "—"
     delivery_point: str = "—"
     price: str = "—"
+    po_number: str = ""
+    order_number: str = ""
     failure_reasons: list = None
     _order_dict: dict = field(default_factory=dict)
 
@@ -663,7 +665,7 @@ class Pipeline:
                 job_number=job_number, status=scored.status, composite_score=scored.composite_score,
                 written_to_sheet=True, skipped_duplicate=False,
                 collection_point=collection_point, delivery_point=delivery_point,
-                price="—", failure_reasons=scored.failure_reasons,
+                price="—", po_number=booking.po_number, failure_reasons=scored.failure_reasons,
             )
         except Exception as e:
             logger.error("SHEET WRITE FAILED for Eurocoils job %s: %s", job_number, e)
@@ -739,7 +741,7 @@ class Pipeline:
                 job_number=job_number, status=scored.status, composite_score=scored.composite_score,
                 written_to_sheet=True, skipped_duplicate=False,
                 collection_point=collection_point, delivery_point=delivery_point,
-                price="—", failure_reasons=scored.failure_reasons,
+                price="—", order_number=booking.order_number, failure_reasons=scored.failure_reasons,
             )
         except Exception as e:
             logger.error("SHEET WRITE FAILED for InContrast SDN %s: %s", job_number, e)
@@ -747,7 +749,7 @@ class Pipeline:
                 job_number=job_number, status=scored.status, composite_score=scored.composite_score,
                 written_to_sheet=False, skipped_duplicate=False, error=str(e),
                 collection_point=collection_point, delivery_point=delivery_point,
-                price="—", failure_reasons=scored.failure_reasons,
+                price="—", order_number=booking.order_number, failure_reasons=scored.failure_reasons,
             )
 
     def _process_community_playthings_booking(self, booking, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:

@@ -61,7 +61,7 @@ class VerificationPipeline:
             logger.error("Could not load Verification sheet existing jobs: %s", e)
             return set()
 
-    def process_jobs(self, job_numbers: list[str], po_numbers: Optional[dict] = None) -> dict:
+    def process_jobs(self, job_numbers: list[str], po_numbers: Optional[dict] = None, search_terms: Optional[dict] = None) -> dict:
         """
         Scrape Proteo for each job number and write to Verification sheet.
         Skips jobs already present in the sheet.
@@ -79,6 +79,7 @@ class VerificationPipeline:
         not_found = 0
         errors = 0
         po_numbers = po_numbers or {}
+        search_terms = search_terms or {}
 
         for job_number in job_numbers:
             if job_number in self._seen:
@@ -88,9 +89,13 @@ class VerificationPipeline:
 
             try:
                 po = po_numbers.get(job_number)
+                search = search_terms.get(job_number)
                 if po:
-                    # Search by PO number, match the specific drop by W/Order No (docket)
+                    # Eurocoils: search by PO number, match the specific drop by W/Order No (docket)
                     row = self.proteo.scrape_job(job_number, search_term=po, match_docket=job_number)
+                elif search:
+                    # InContrast: search by JOB No., take first result (no docket match needed)
+                    row = self.proteo.scrape_job(job_number, search_term=search)
                 else:
                     row = self.proteo.scrape_job(job_number)
             except Exception as e:

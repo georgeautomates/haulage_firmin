@@ -147,12 +147,13 @@ def _poll(
         active_orders = [o for o in result.orders if not o.skipped_duplicate and not o.error]
         job_numbers = [o.job_number for o in active_orders]
         po_numbers = {o.job_number: o.po_number for o in active_orders if o.po_number}
+        search_terms = {o.job_number: o.order_number for o in active_orders if o.order_number}
 
         # Verification: scrape Proteo Find Order for each processed job
         if verification and job_numbers:
             logger.info("Running Proteo verification for %d jobs", len(job_numbers))
             try:
-                verification.process_jobs(job_numbers, po_numbers=po_numbers or None)
+                verification.process_jobs(job_numbers, po_numbers=po_numbers or None, search_terms=search_terms or None)
             except Exception as e:
                 logger.error("Verification pipeline error: %s", e, exc_info=True)
 

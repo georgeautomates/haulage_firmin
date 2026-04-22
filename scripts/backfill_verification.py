@@ -31,18 +31,23 @@ ACTUAL_WS = "Actual Entry"
 VERIFY_WS = "Verification"
 
 
-def get_job_numbers(ws: gspread.Worksheet) -> tuple[list[str], dict[str, str]]:
-    """Returns (job_numbers, po_map) where po_map maps delivery_order_number -> po_number."""
+def get_job_numbers(ws: gspread.Worksheet) -> tuple[list[str], dict[str, str], dict[str, str]]:
+    """Returns (job_numbers, po_map, search_terms) where:
+      - po_map maps SDN -> po_number for Eurocoils (search by PO, match by docket)
+      - search_terms maps SDN -> job_no for InContrast (search by JOB No., take first result)
+    """
     headers = ws.row_values(1)
     if "delivery_order_number" not in headers:
         raise RuntimeError(f"delivery_order_number column not found in {ws.title}")
     don_idx = headers.index("delivery_order_number")
     po_idx = headers.index("po_number") if "po_number" in headers else -1
+    order_no_idx = headers.index("order_number") if "order_number" in headers else -1
     client_idx = headers.index("client_name") if "client_name" in headers else -1
 
     rows = ws.get_all_values()[1:]  # skip header
     jobs = []
     po_map = {}
+    search_terms = {}
     for row in rows:
         v = row[don_idx].strip() if len(row) > don_idx else ""
         if not v:
@@ -53,15 +58,23 @@ def get_job_numbers(ws: gspread.Worksheet) -> tuple[list[str], dict[str, str]]:
             pass
         jobs.append(v)
 
-        # Build po_map for Eurocoils: search by PO number, match by docket
-        if po_idx >= 0 and client_idx >= 0:
-            client = row[client_idx].strip().lower() if len(row) > client_idx else ""
-            if "eurocoils" in client:
-                po = row[po_idx].strip() if len(row) > po_idx else ""
-                if po:
-                    po_map[v] = po
+        if client_idx < 0:
+            continue
+        client = row[client_idx].strip().lower() if len(row) > client_idx else ""
 
-    return jobs, po_map
+        # Eurocoils: search by PO number, match by docket (W/Order No)
+        if "eurocoils" in client and po_idx >= 0:
+            po = row[po_idx].strip() if len(row) > po_idx else ""
+            if po:
+                po_map[v] = po
+
+        # InContrast: search by JOB No. (order_number), not SDN
+        if ("incontrast" in client or "sti line" in client) and order_no_idx >= 0:
+            jno = row[order_no_idx].strip() if len(row) > order_no_idx else ""
+            if jno:
+                search_terms[v] = jno
+
+    return jobs, po_map, search_terms
 
 
 def main():
@@ -74,11 +87,11 @@ def main():
     sh = sheets._gc.open_by_key(SPREADSHEET_ID)
 
     print("Reading Actual Entry...")
-    actual_jobs, po_map = get_job_numbers(sh.worksheet(ACTUAL_WS))
-    print(f"  {len(actual_jobs)} jobs in Actual Entry ({len(po_map)} Eurocoils with PO map)")
+    actual_jobs, po_map, search_terms = get_job_numbers(sh.worksheet(ACTUAL_WS))
+    print(f"  {len(actual_jobs)} jobs in Actual Entry ({len(po_map)} Eurocoils with PO map, {len(search_terms)} InContrast with JOB No. search)")
 
     print("Reading Verification...")
-    verify_jobs, _ = get_job_numbers(sh.worksheet(VERIFY_WS))
+    verify_jobs, _, _ = get_job_numbers(sh.worksheet(VERIFY_WS))
     verify_jobs = set(verify_jobs)
     print(f"  {len(verify_jobs)} jobs in Verification")
 
@@ -113,7 +126,7 @@ def main():
     verification = VerificationPipeline(proteo=proteo, sheets=sheets)
 
     print(f"\nBackfilling {len(missing_unique)} jobs...")
-    summary = verification.process_jobs(missing_unique, po_numbers=po_map)
+    summary = verification.process_jobs(missing_unique, po_numbers=po_map, search_terms=search_terms)
 
     print(f"\nDone.")
     print(f"  Written:   {summary['written']}")

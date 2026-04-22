@@ -650,6 +650,11 @@ class ProteoClient:
                 if "community playthings" in client and not row_data.get("delivery_order_number"):
                     row_data["delivery_order_number"] = job_number
 
+                # For InContrast: admins enter JOB No. as the docket in Proteo, but we
+                # search by JOB No. and need the join key to be the SDN (job_number)
+                if any(kw in client for kw in ("incontrast", "sti line")):
+                    row_data["delivery_order_number"] = job_number
+
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
                 logger.debug("Proteo: extracted job %s -> order_id=%s client=%s", job_number, row_data["order_id"], row_data["client_name"])
                 return row_data
