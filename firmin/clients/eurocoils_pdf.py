@@ -192,3 +192,47 @@ def parse_eurocoils_pdf(raw_text: str, email_subject: str = "") -> list[Eurocoil
         logger.warning("Eurocoils PDF: no delivery notes found (subject=%s)", email_subject)
 
     return results
+
+
+def parse_eurocoils_pdf_vision(pdf_bytes: bytes, ai_client, email_subject: str = "") -> list[EurocoilsDelivery]:
+    """
+    Fallback parser for scanned Eurocoils PDFs — uses GPT-4o vision.
+    Returns the same EurocoilsDelivery list as parse_eurocoils_pdf.
+    """
+    raw_items = ai_client.extract_eurocoils_scanned(pdf_bytes)
+    if not raw_items:
+        logger.warning("Eurocoils vision: no deliveries extracted (subject=%s)", email_subject)
+        return []
+
+    # Fallback PO from subject if vision missed it
+    subject_po = ""
+    if email_subject:
+        subj_m = re.search(r'PO\s*[-–]\s*(\d{5})', email_subject, re.IGNORECASE)
+        if subj_m:
+            subject_po = subj_m.group(1)
+
+    results = []
+    for item in raw_items:
+        po_number = str(item.get("po_number", "") or subject_po).strip()
+        job_number = str(item.get("job_number", "")).strip()
+        if not job_number:
+            continue
+        collection_date = str(item.get("collection_date", "")).strip()
+        delivery = EurocoilsDelivery(
+            job_number=job_number,
+            po_number=po_number,
+            customer_ref="",
+            collection_date=collection_date,
+            delivery_date=_next_day(collection_date),
+            delivery_postcode=str(item.get("delivery_postcode", "")).strip(),
+            delivery_company=str(item.get("delivery_company", "")).strip(),
+            pallets=int(item.get("pallets", 1) or 1),
+        )
+        results.append(delivery)
+        logger.info(
+            "Eurocoils vision delivery: PO=%s W/Order=%s postcode=%s date=%s pallets=%d",
+            delivery.po_number, delivery.job_number,
+            delivery.delivery_postcode, delivery.collection_date, delivery.pallets,
+        )
+
+    return results

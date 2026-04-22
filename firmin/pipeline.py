@@ -13,7 +13,7 @@ from firmin.clients.unipet_pdf import parse_unipet_manifest
 from firmin.clients.revolution_beauty_pdf import parse_revolution_beauty_booking, collection_point_for, delivery_point_for
 from firmin.clients.aim_pdf import parse_aim_booking
 from firmin.clients.community_playthings_pdf import parse_community_playthings_pdf, CommunityPlaythingsDelivery, CommunityPlaythingsRoundRobin
-from firmin.clients.eurocoils_pdf import parse_eurocoils_pdf
+from firmin.clients.eurocoils_pdf import parse_eurocoils_pdf, parse_eurocoils_pdf_vision
 from firmin.clients.incontrast_pdf import parse_incontrast_pdf
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
@@ -184,6 +184,11 @@ class Pipeline:
                     logger.warning("Community Playthings parser returned nothing for %s", attachment["filename"])
             elif profile.parser == "eurocoils":
                 bookings = parse_eurocoils_pdf(pdf_result.raw_text, email_subject=email.subject)
+                if not bookings:
+                    logger.info("Eurocoils text parser empty — trying vision for %s", attachment["filename"])
+                    bookings = parse_eurocoils_pdf_vision(
+                        attachment["data"], self.ai, email_subject=email.subject
+                    )
                 if bookings:
                     result.total_jobs += len(bookings)
                     for booking in bookings:

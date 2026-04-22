@@ -263,6 +263,37 @@ class DualExtractionResult:
     agreement_score: int                 # 0-100 percentage of fields that agree
 
 
+_EUROCOILS_VISION_PROMPT = """\
+You are extracting delivery information from scanned Eurocoils PDF documents.
+
+The PDF has multiple pages:
+- Page 1: Official Order — contains the PO number printed large at the top right (e.g. 54984), \
+  and a handwritten list of delivery destinations.
+- Pages 2+: Delivery Notes — each has a "DELIVERY NOTE" header, \
+  and a table row with W/Order No, delivery address, date, and quantity.
+
+For each Delivery Note page extract:
+- po_number: the 5-digit PO number from the Official Order page (top-right corner of page 1)
+- job_number: the W/Order No value from the QTY.ORD column (e.g. "46455") — this is italic/handwritten
+- delivery_company: the company name from the DELIVERY TO section (top-right block)
+- delivery_postcode: the UK postcode from the DELIVERY TO section (e.g. "GL2 4NZ")
+- collection_date: the DATE field on the delivery note in DD/MM/YYYY format
+- pallets: the integer quantity from QTY.DEL column (default 1 if unclear)
+
+Return ONLY a JSON array, one object per Delivery Note page, no markdown, no explanation:
+[
+  {
+    "po_number": "54984",
+    "job_number": "46455",
+    "delivery_company": "Neptune Building Services",
+    "delivery_postcode": "GL2 4NZ",
+    "collection_date": "21/04/2026",
+    "pallets": 1
+  }
+]
+"""
+
+
 class AiClient:
     PRIMARY_MODEL = "gpt-4o"
     SECONDARY_MODEL = "gpt-4o-mini"
@@ -325,6 +356,50 @@ class AiClient:
         except Exception as e:
             logger.error("AI extraction failed for job %s (model %s): %s", job_number, model, e)
             return None
+
+    def extract_eurocoils_scanned(self, pdf_bytes: bytes) -> list[dict]:
+        """
+        Extract Eurocoils delivery data from a scanned PDF using GPT-4o vision.
+        Returns a list of dicts with keys: po_number, job_number, delivery_company,
+        delivery_postcode, collection_date, pallets.
+        """
+        import base64
+        import fitz
+
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            images_b64 = []
+            for i in range(len(doc)):
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(2, 2))
+                images_b64.append(base64.b64encode(pix.tobytes("png")).decode())
+            doc.close()
+        except Exception as e:
+            logger.error("Eurocoils vision: failed to render PDF pages: %s", e)
+            return []
+
+        content = [{"type": "text", "text": _EUROCOILS_VISION_PROMPT}]
+        for img_b64 in images_b64:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{img_b64}", "detail": "high"},
+            })
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.primary_model,
+                messages=[{"role": "user", "content": content}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content or ""
+            clean = re.sub(r"```json|```", "", raw).strip()
+            data = json.loads(clean)
+            if isinstance(data, dict):
+                data = [data]
+            logger.info("Eurocoils vision extracted %d delivery note(s)", len(data))
+            return data
+        except Exception as e:
+            logger.error("Eurocoils vision extraction failed: %s", e)
+            return []
 
 
 def _parse_response(content: str, job_number: str) -> Optional[AiExtractionResult]:
