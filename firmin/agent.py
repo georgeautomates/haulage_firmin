@@ -18,6 +18,7 @@ from firmin.profiles.loader import load_all_profiles, match_profile
 from firmin.utils.dedup import DedupStore
 from firmin.utils.logger import get_logger
 from firmin.verification import VerificationPipeline, RpaEntryPipeline
+from firmin.comparison import run_comparison
 
 logger = get_logger(__name__)
 
@@ -83,7 +84,12 @@ def run():
 
     while True:
         try:
-            _poll(gmail, pipeline, verification, profiles, dedup, gmail_query, drive, rpa_entry)
+            any_written = _poll(gmail, pipeline, verification, profiles, dedup, gmail_query, drive, rpa_entry)
+            if any_written:
+                try:
+                    run_comparison(sheets)
+                except Exception as e:
+                    logger.error("Comparison tab update failed: %s", e, exc_info=True)
         except Exception as e:
             logger.error("Poll cycle error: %s", e, exc_info=True)
 
@@ -100,13 +106,14 @@ def _poll(
     query: str,
     drive: DriveClient | None = None,
     rpa_entry: RpaEntryPipeline | None = None,
-):
+) -> bool:
     emails = gmail.fetch_unread(query=query)
 
     if not emails:
         logger.debug("No new emails")
-        return
+        return False
 
+    any_written = False
     for email in emails:
         if dedup.email_seen(email.message_id):
             logger.debug("Email already processed: %s", email.message_id)
@@ -144,14 +151,18 @@ def _poll(
             result.errors,
         )
 
+        if result.written:
+            any_written = True
+
         active_orders = [o for o in result.orders if not o.skipped_duplicate and not o.error]
         job_numbers = [o.job_number for o in active_orders]
+        po_numbers = {o.job_number: o.po_number for o in active_orders if o.po_number}
 
         # Verification: scrape Proteo Find Order for each processed job
         if verification and job_numbers:
             logger.info("Running Proteo verification for %d jobs", len(job_numbers))
             try:
-                verification.process_jobs(job_numbers)
+                verification.process_jobs(job_numbers, po_numbers=po_numbers or None)
             except Exception as e:
                 logger.error("Verification pipeline error: %s", e, exc_info=True)
 
@@ -162,6 +173,8 @@ def _poll(
                 rpa_entry.process_jobs(result._order_dicts)
             except Exception as e:
                 logger.error("RPA entry pipeline error: %s", e, exc_info=True)
+
+    return any_written
 
 
 if __name__ == "__main__":
