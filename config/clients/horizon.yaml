@@ -1,0 +1,24 @@
+client_id: horizon
+display_name: "Horizon International Cargo"
+
+email_filters:
+  sender_contains:
+    - "scangl.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+parser: "scan_global"
+
+defaults:
+  client_name: "Horizon International Cargo"
+  goods_type: "Palletised"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+known_locations: {}
+
+confidence_thresholds:
+  green: 80
+  yellow: 50

@@ -15,6 +15,7 @@ from firmin.clients.aim_pdf import parse_aim_booking
 from firmin.clients.community_playthings_pdf import parse_community_playthings_pdf, CommunityPlaythingsDelivery, CommunityPlaythingsRoundRobin
 from firmin.clients.eurocoils_pdf import parse_eurocoils_pdf, parse_eurocoils_pdf_vision
 from firmin.clients.incontrast_pdf import parse_incontrast_pdf
+from firmin.clients.scan_global_pdf import parse_scan_global_header
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -101,7 +102,7 @@ class Pipeline:
             logger.info("Processing attachment: %s", attachment["filename"])
             pdf_result = extract_pdf(attachment["data"])
 
-            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim", "community_playthings", "eurocoils", "incontrast")
+            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim", "community_playthings", "eurocoils", "incontrast", "scan_global")
             if not pdf_result.job_numbers and not custom_parser:
                 logger.warning("No job numbers found in %s", attachment["filename"])
                 continue
@@ -221,6 +222,22 @@ class Pipeline:
                         result.orders.append(order_result)
                 else:
                     logger.warning("InContrast parser returned nothing for %s", attachment["filename"])
+            elif profile.parser == "scan_global":
+                booking = parse_scan_global_header(pdf_result.raw_text)
+                if booking:
+                    result.total_jobs += 1
+                    order_result = self._process_scan_global_booking(
+                        booking=booking,
+                        raw_text=pdf_result.raw_text,
+                        message_id=email.message_id,
+                        profile=profile,
+                        pdf_url=pdf_url,
+                        email_subject=email.subject,
+                        email_body=email.body,
+                    )
+                    result.orders.append(order_result)
+                else:
+                    logger.warning("Scan Global parser returned nothing for %s", attachment["filename"])
             else:
                 for job_number in pdf_result.job_numbers:
                     order_result = self._process_job(
@@ -750,6 +767,121 @@ class Pipeline:
                 written_to_sheet=False, skipped_duplicate=False, error=str(e),
                 collection_point=collection_point, delivery_point=delivery_point,
                 price="—", order_number=booking.order_number, failure_reasons=scored.failure_reasons,
+            )
+
+    def _process_scan_global_booking(self, booking, raw_text: str, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
+        job_number = booking.serial_number or booking.job_reference or message_id
+
+        # Skip PDFs not assigned to Alan Firmin
+        if booking.haulier and "alan firmin" not in booking.haulier.lower():
+            logger.info("Scan Global: skipping serial %s — haulier is '%s'", job_number, booking.haulier)
+            return OrderResult(job_number=job_number, status="SKIPPED", composite_score=0, written_to_sheet=False, skipped_duplicate=True)
+
+        if self.dedup.order_seen(job_number):
+            logger.info("Skipping duplicate Scan Global serial: %s", job_number)
+            return OrderResult(job_number=job_number, status="SKIPPED", composite_score=0, written_to_sheet=False, skipped_duplicate=True)
+
+        dual = self.ai.extract_job_dual(raw_text, job_number)
+        if not dual:
+            return OrderResult(job_number=job_number, status="ERROR", composite_score=0, written_to_sheet=False, skipped_duplicate=False, error="AI extraction failed")
+        extracted = dual.primary
+
+        client_name = profile.defaults.get("client_name", "Horizon International Cargo")
+        conditional_locations = getattr(profile, "conditional_locations", {})
+
+        collection_point = (
+            self.supabase.lookup_location(
+                postcode=extracted.collection_postcode,
+                org_name=extracted.collection_org,
+                search=extracted.collection_search,
+                known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
+                client_name=client_name,
+                pdf_address=extracted.collection_search,
+            ) or "UNMATCHED"
+        )
+        delivery_point = (
+            self.supabase.lookup_location(
+                postcode=extracted.delivery_postcode,
+                org_name=extracted.delivery_org,
+                search=extracted.delivery_search,
+                known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
+                client_name=client_name,
+                pdf_address=extracted.delivery_search,
+            ) or extracted.delivery_org or "UNMATCHED"
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+        order = {
+            **profile.defaults,
+            "client_name": client_name,
+            "job_number": job_number,
+            "delivery_order_number": job_number,
+            "order_number": booking.job_reference,
+            "po_number": booking.job_reference,
+            "customer_ref": extracted.customer_ref,
+            "booking_window": extracted.booking_window,
+            "traffic_note": extracted.traffic_note,
+            "work_type": extracted.work_type,
+            "collection_point": collection_point,
+            "collection_postcode": extracted.collection_postcode,
+            "collection_date": extracted.collection_date,
+            "collection_time": extracted.collection_time,
+            "delivery_point": delivery_point,
+            "delivery_postcode": extracted.delivery_postcode,
+            "delivery_date": extracted.delivery_date,
+            "delivery_time": extracted.delivery_time,
+            "pallets": booking.pallets,
+            "spaces": booking.pallets,
+            "weight": booking.weight,
+            "price": "",
+            "rate": "",
+            "processed_at": now,
+            "message_id": message_id,
+            "pdf_url": pdf_url,
+            "email_subject": email_subject,
+            "email_body": email_body,
+            "m2_collection_org": dual.secondary.collection_org,
+            "m2_collection_postcode": dual.secondary.collection_postcode,
+            "m2_collection_date": dual.secondary.collection_date,
+            "m2_collection_time": dual.secondary.collection_time,
+            "m2_delivery_org": dual.secondary.delivery_org,
+            "m2_delivery_postcode": dual.secondary.delivery_postcode,
+            "m2_delivery_date": dual.secondary.delivery_date,
+            "m2_delivery_time": dual.secondary.delivery_time,
+            "m2_price": dual.secondary.price,
+            "m2_order_number": dual.secondary.order_number,
+            "m2_work_type": dual.secondary.work_type,
+            "model_agreement_score": dual.agreement_score,
+            "model_agreement_fields": ", ".join(f for f, ok in dual.agreement.items() if not ok) or "ALL_MATCH",
+            " goods_type": profile.defaults.get("goods_type", ""),
+        }
+
+        scored = score_order(order)
+        order["composite_score"] = scored.composite_score
+        order["Composite_score"] = scored.composite_score
+        order["status"] = scored.status
+        order["Status"] = scored.status
+
+        self.dedup.mark_order_seen(job_number, message_id)
+
+        try:
+            self.sheets.append_row(profile.sheets.spreadsheet_id, profile.sheets.worksheet_name, order)
+            logger.info("Scan Global serial %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=True, skipped_duplicate=False,
+                collection_point=collection_point, delivery_point=delivery_point,
+                price="—", failure_reasons=scored.failure_reasons, _order_dict=order,
+            )
+        except Exception as e:
+            logger.error("SHEET WRITE FAILED for Scan Global serial %s: %s", job_number, e)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=False, skipped_duplicate=False, error=str(e),
+                collection_point=collection_point, delivery_point=delivery_point,
+                price="—", failure_reasons=scored.failure_reasons,
             )
 
     def _process_community_playthings_booking(self, booking, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
