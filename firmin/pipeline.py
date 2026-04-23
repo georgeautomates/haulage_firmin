@@ -223,7 +223,7 @@ class Pipeline:
                 else:
                     logger.warning("InContrast parser returned nothing for %s", attachment["filename"])
             elif profile.parser == "scan_global":
-                booking = parse_scan_global_header(pdf_result.raw_text)
+                booking = parse_scan_global_header(pdf_result.raw_text, filename=attachment["filename"])
                 if booking:
                     result.total_jobs += 1
                     order_result = self._process_scan_global_booking(

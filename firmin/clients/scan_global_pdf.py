@@ -18,6 +18,7 @@ from firmin.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_FILENAME_RE = re.compile(r'^([A-Z]{2}\d{6})-(\d{5,7})_', re.IGNORECASE)
 _JOB_REF_RE  = re.compile(r'\b((?:SD|SI)\d{6})\b')
 _SERIAL_RE   = re.compile(r'Serial\s+No[:\s]+(\d{5,7})', re.IGNORECASE)
 _HAULIER_RE  = re.compile(r'Haulier[:\s]+(.+)', re.IGNORECASE)
@@ -34,21 +35,34 @@ class ScanGlobalBooking:
     weight: str
 
 
-def parse_scan_global_header(raw_text: str) -> Optional[ScanGlobalBooking]:
+def parse_scan_global_header(raw_text: str, filename: str = "") -> Optional[ScanGlobalBooking]:
     """
     Extract the structured header fields from a Scan Global Transport Instructions PDF.
+    Tries the filename first (most reliable), falls back to PDF text.
     Returns None if Job Reference or Serial Number cannot be found.
     """
     text = re.sub(r'\r\n|\r', '\n', raw_text)
 
-    m = _JOB_REF_RE.search(text)
-    job_reference = m.group(1) if m else ""
+    # Primary: extract from filename — SD718565-598663_CollDel Report....pdf
+    job_reference = ""
+    serial_number = ""
+    if filename:
+        m = _FILENAME_RE.match(filename)
+        if m:
+            job_reference = m.group(1).upper()
+            serial_number = m.group(2)
 
-    m = _SERIAL_RE.search(text)
-    serial_number = m.group(1) if m else ""
+    # Fallback: scan PDF text
+    if not job_reference:
+        m = _JOB_REF_RE.search(text)
+        job_reference = m.group(1) if m else ""
+
+    if not serial_number:
+        m = _SERIAL_RE.search(text)
+        serial_number = m.group(1) if m else ""
 
     if not job_reference or not serial_number:
-        logger.warning("Scan Global: could not extract job reference or serial number")
+        logger.warning("Scan Global: could not extract job reference or serial number from '%s'", filename)
         return None
 
     haulier = ""
