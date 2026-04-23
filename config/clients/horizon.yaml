@@ -2,7 +2,7 @@ client_id: horizon
 display_name: "Horizon International Cargo"
 
 email_filters:
-  sender_contains:
+  subject_contains:
     - "scangl.com"
   has_attachment: true
   attachment_type: "pdf"
