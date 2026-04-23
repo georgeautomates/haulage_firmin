@@ -1,13 +1,19 @@
 # Firmin — Session Context
-_Last updated: 2026-04-10 (session 10)_
+_Last updated: 2026-04-23 (session 11)_
 
 ## What this project is
 
 Python agent for Alan Firmin Ltd (haulage). Polls Gmail for booking form emails (PDF attachments), extracts structured order data per job, looks up location point names from Supabase, scores confidence, and writes rows to Google Sheets. Runs in shadow mode alongside the existing n8n workflow for validation.
 
-This is a **multi-client system**. Two clients are now live:
+This is a **multi-client system**. Eight clients are now live:
 1. **St Regis Fibre A/C** (DS Smith) — AI extraction pipeline
 2. **Unipet International Ltd** — manifest parser (no AI)
+3. **Revolution Beauty Ltd** — custom PDF parser
+4. **AIM (SIG Trading Limited)** — custom PDF parser
+5. **Community Playthings** — custom PDF parser
+6. **Eurocoils Limited** — custom PDF parser + GPT-4o vision fallback for scanned PDFs
+7. **STI Line Ltd T/A InContrast** — custom PDF parser (Transport Sheet)
+8. **Horizon International Cargo** (Scan Global Logistics) — custom parser + AI extraction
 
 Reference n8n workflow: `C:\Users\USERAS\Downloads\St Regis Fiber - Shadow Mode.json`
 
@@ -40,8 +46,14 @@ firmin/
 config/
 ├── settings.yaml          — includes drive_folder_id config
 └── clients/
-    ├── st_regis_fibre.yaml  — St Regis Fibre A/C client profile
-    └── unipet.yaml          — Unipet International Ltd client profile
+    ├── st_regis_fibre.yaml       — St Regis Fibre A/C
+    ├── unipet.yaml               — Unipet International Ltd
+    ├── revolution_beauty.yaml    — Revolution Beauty Ltd
+    ├── aim.yaml                  — AIM (SIG Trading Limited)
+    ├── community_playthings.yaml — Community Playthings
+    ├── eurocoils.yaml            — Eurocoils Limited
+    ├── incontrast.yaml           — STI Line Ltd T/A InContrast
+    └── horizon.yaml              — Horizon International Cargo (Scan Global Logistics)
 
 scripts/
 ├── setup_gmail_oauth.py        — one-time Gmail OAuth setup (scopes: gmail.modify + drive.file)
@@ -89,6 +101,61 @@ Next.js app (deployed separately) for reviewing processed orders.
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-23, session 11)
+
+#### Multi-client expansion — 6 new clients onboarded
+
+**Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon** all added with custom parsers. Each has a YAML profile in `config/clients/`.
+
+**Key parser files added:**
+- `firmin/clients/revolution_beauty_pdf.py`
+- `firmin/clients/aim_pdf.py`
+- `firmin/clients/community_playthings_pdf.py`
+- `firmin/clients/eurocoils_pdf.py` — includes `parse_eurocoils_pdf_vision()` using GPT-4o for scanned PDFs
+- `firmin/clients/incontrast_pdf.py`
+- `firmin/clients/scan_global_pdf.py` — extracts Job Reference + Serial Number from filename
+
+**Eurocoils specifics:**
+- All PDFs are scanned (image-based) — pdfplumber returns empty text
+- GPT-4o vision fallback: render PDF pages to PNG via PyMuPDF at 2x zoom, send as base64 to OpenAI
+- `ai.py` has `extract_eurocoils_scanned(pdf_bytes)` method
+- Dedup key: W/Order No (from Delivery Note page)
+- PO number: from Official Order page / email subject ("PO - 54976")
+- Proteo verification: search by PO number, match by W/Order No docket
+
+**InContrast specifics:**
+- Email subject: `"Collection for:"` — forwarded internally by Firmin staff
+- PDF: "ASSEMBLY DEPT COLLECTIONS" Transport Sheet — multiple jobs per page
+- Dedup key: SDN (unique per booking)
+- JOB No. = order_number (what admins enter as docket in Proteo — NOT the SDN)
+- Verification: search Proteo by JOB No., override delivery_order_number with SDN for join
+
+**Horizon International Cargo specifics:**
+- Actual client is Scan Global Logistics (UK) Ltd, Aylesford (ME20 7NA)
+- PDF: "Transport Instructions" — one job per PDF, both collection and delivery vary
+- Email filter: `subject_contains: scangl.com` — emails are forwarded internally, scangl.com appears in subject not From field
+- Filename format: `SD718565-598663_CollDel Report*.pdf` — Job Reference + Serial Number always in filename
+- Dedup key: Serial Number (unique per PDF — one Job Reference can have multiple PDFs/trips)
+- Order number: Job Reference (SD/SI + 6 digits)
+- Haulier check: skips PDFs where Haulier ≠ ALAN FIRMIN LTD
+- AI extraction used for collection/delivery (two-column layout unreliable for regex)
+- Collection point UNMATCHED issue pending — ME20 7NA (Scan Global depot) not yet in Supabase; needs known_locations entry
+
+#### Email filter fixes
+- Gmail query: subject keywords now wrapped in quotes (`subject:"Collection for:"`) so multi-word phrases work correctly
+- Dedup loop bug fixed: emails skipped by dedup now get `gmail.mark_as_read()` before `continue` — prevents infinite unread loop
+
+#### Verification fixes
+- `po_numbers` dict (`{job_number: po_number}`) now passed to `verification.process_jobs()` for Eurocoils
+- `search_terms` dict (`{SDN: JOB_No}`) added for InContrast — searches Proteo by JOB No., overrides delivery_order_number with SDN
+- `backfill_verification.py` builds both maps automatically from Actual Entry sheet
+- `proteo.py`: added InContrast override — delivery_order_number replaced with original job_number (SDN) after Proteo lookup
+
+#### Pipeline additions
+- `OrderResult` now has `po_number` and `order_number` fields (used by agent to build verification maps)
+- `scan_global` added to `custom_parser` list in pipeline
+- `_process_scan_global_booking()` method added
 
 ### What's been completed this session (2026-04-10, session 10)
 
@@ -516,7 +583,7 @@ LOG_LEVEL=INFO
 - **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
 - **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
-- **Multi-client expansion** — Unipet ✅ DONE (session 10). Revolution Beauty and St Regis Reels pending boss sign-off. Smurfit/Wincanton pending sample PDFs.
+- **Multi-client expansion** — 8 clients live ✅: St Regis, Unipet, Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon. Horizon collection point known_locations pending (ME20 7NA → Scan Global name TBD). InContrast verification pending (admins not entering SDN in Proteo). Dashboard client_type() needs Horizon + InContrast entries for comparison join.
 - **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
