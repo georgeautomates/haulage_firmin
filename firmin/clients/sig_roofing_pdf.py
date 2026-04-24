@@ -24,6 +24,7 @@ from firmin.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_DOC_NO_RE        = re.compile(r'Document\s+Number\s+(\d+/\d+)', re.IGNORECASE)
 _ORDER_NO_RE      = re.compile(r'Order\s+Number\s+(\d{7,12})\b', re.IGNORECASE)
 _ORDER_DATE_RE    = re.compile(r'Order\s+Date:\s+(\d{2}/\d{2}/\d{4})', re.IGNORECASE)
 _DELIVERY_DATE_RE = re.compile(r'(\d{2}/\d{2}/\d{4})\s+[\d.]+\s+EA\b', re.IGNORECASE)
@@ -79,11 +80,16 @@ def parse_sig_roofing_pdf(raw_text: str) -> Optional[SigRoofingBooking]:
     """
     text = re.sub(r'\r\n|\r', '\n', raw_text)
 
-    m = _ORDER_NO_RE.search(text)
-    if not m:
-        logger.warning("SIG Roofing: Order Number not found in PDF")
-        return None
-    order_number = m.group(1)
+    # Prefer Document Number (e.g. 3101/00400951) — matches Proteo Load Number
+    m = _DOC_NO_RE.search(text)
+    if m:
+        order_number = m.group(1)
+    else:
+        m = _ORDER_NO_RE.search(text)
+        if not m:
+            logger.warning("SIG Roofing: Order Number not found in PDF")
+            return None
+        order_number = m.group(1)
 
     order_date = ""
     m = _ORDER_DATE_RE.search(text)

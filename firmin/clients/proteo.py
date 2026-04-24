@@ -627,7 +627,7 @@ class ProteoClient:
                 # global across all clients, so a matching job number from Pallet Track
                 # or another company can be returned instead of the DS Smith job.
                 client = str(row_data.get("client_name", "")).lower()
-                if not any(kw in client for kw in ("st regis", "ds smith", "fibre", "reels", "unipet", "revolution beauty", "aim", "sig trading", "community playthings", "eurocoils", "incontrast", "sti line")):
+                if not any(kw in client for kw in ("st regis", "ds smith", "fibre", "reels", "unipet", "revolution beauty", "aim", "sig trading", "community playthings", "eurocoils", "incontrast", "sti line", "roofing centre")):
                     logger.warning(
                         "Proteo: job %s result rejected — client_name '%s' does not match known clients",
                         job_number, row_data.get("client_name"),
@@ -653,6 +653,11 @@ class ProteoClient:
                 # For InContrast: admins enter JOB No. as the docket in Proteo, but we
                 # search by JOB No. and need the join key to be the SDN (job_number)
                 if any(kw in client for kw in ("incontrast", "sti line")):
+                    row_data["delivery_order_number"] = job_number
+
+                # For Roofing Centre: Docket Number is often blank in Proteo;
+                # use Load Number (job_number = Document Number) as the join key
+                if "roofing centre" in client:
                     row_data["delivery_order_number"] = job_number
 
                 row_data["processed_at"] = datetime.now(timezone.utc).isoformat()
