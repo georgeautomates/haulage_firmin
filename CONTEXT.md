@@ -1,19 +1,23 @@
 # Firmin — Session Context
-_Last updated: 2026-04-23 (session 11)_
+_Last updated: 2026-04-24 (session 16)_
 
 ## What this project is
 
 Python agent for Alan Firmin Ltd (haulage). Polls Gmail for booking form emails (PDF attachments), extracts structured order data per job, looks up location point names from Supabase, scores confidence, and writes rows to Google Sheets. Runs in shadow mode alongside the existing n8n workflow for validation.
 
-This is a **multi-client system**. Eight clients are now live:
+This is a **multi-client system**. Ten clients are now live:
 1. **St Regis Fibre A/C** (DS Smith) — AI extraction pipeline
-2. **Unipet International Ltd** — manifest parser (no AI)
-3. **Revolution Beauty Ltd** — custom PDF parser
-4. **AIM (SIG Trading Limited)** — custom PDF parser
-5. **Community Playthings** — custom PDF parser
-6. **Eurocoils Limited** — custom PDF parser + GPT-4o vision fallback for scanned PDFs
-7. **STI Line Ltd T/A InContrast** — custom PDF parser (Transport Sheet)
-8. **Horizon International Cargo** (Scan Global Logistics) — custom parser + AI extraction
+2. **St Regis Reels** (DS Smith sub-client) — same pipeline, classified by subject/collection point
+3. **Unipet International Ltd** — manifest parser (no AI)
+4. **Revolution Beauty Ltd** — custom PDF parser
+5. **AIM (SIG Trading Limited)** — custom PDF parser
+6. **Community Playthings** — custom PDF parser
+7. **Eurocoils Limited** — custom PDF parser + GPT-4o vision fallback for scanned PDFs
+8. **STI Line Ltd T/A InContrast** — custom PDF parser (Transport Sheet)
+9. **Horizon International Cargo** (Scan Global Logistics) — custom parser + AI extraction
+10. **Roofing Centre Group Ltd** (SIG Roofing) — custom parser (added by Ayon, session 16)
+11. **CCT Worldwide Limited** — custom parser (added by Ayon, session 16)
+12. **Colombier (UK) Ltd** — custom parser + GPT-4o vision fallback (added by Ayon, session 16)
 
 Reference n8n workflow: `C:\Users\USERAS\Downloads\St Regis Fiber - Shadow Mode.json`
 
@@ -101,6 +105,62 @@ Next.js app (deployed separately) for reviewing processed orders.
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-24, session 16)
+
+#### Automated AI Spot Check System (`scripts/spot_check.py`)
+
+Built to replace the manual daily subject line accuracy check from the weekly priorities. Verifies that each processed order's extraction is consistent with the email that triggered it.
+
+**Approach: pure Python checks, zero AI calls, fully deterministic and free to run.**
+
+Client-aware logic based on what each client's emails actually contain:
+- **Revolution Beauty** — Python regex extracts town from subject, date from subject, checks collection point is GXO/Clipper/Swadlincote
+- **AIM** — order number extracted from subject line, matched against extracted order number
+- **Colombier, CCT Worldwide, Roofing Centre** — delivery postcode extracted from subject, matched against extracted delivery postcode
+- **InContrast** — collection date extracted from subject, matched against extracted collection date
+- **DS Smith, Unipet, Horizon, Community Playthings, Eurocoils** — SKIP (emails contain no verifiable job detail)
+
+Full backfill run across all 982 rows with email_subject: **170 PASS, 15 FLAG, 797 SKIP**
+
+Script usage:
+- `python scripts/spot_check.py` — check all un-checked rows
+- `python scripts/spot_check.py --all` — re-check all rows
+- `python scripts/spot_check.py --limit N` — cap at N rows
+- `python scripts/spot_check.py --dry-run` — print without writing
+
+Add to nightly cron on VPS: `0 2 * * * /opt/firmin/.venv/bin/python /opt/firmin/scripts/spot_check.py`
+
+Writes to `Spot Check` sheet tab (columns: job_number, client_name, checked_at, result, confidence, reason, email_subject, our_collection, our_delivery, our_price, our_order_number).
+
+**DOMAIN_CLIENT_MAP in the script must be updated when new clients are added.**
+
+#### Spot Check Dashboard (`/spot-check` page, firmin-dashboard)
+
+- Stats bar: pass rate (excluding SKIPs), orders checked, passed, flagged, skipped
+- Confidence breakdown row (high/medium/low with progress bars)
+- Filter tabs: ALL / PASS / FLAG / SKIP
+- Client dropdown + search (searches job number, client, reason, subject)
+- Full reasoning column — flags shown in red inline
+- Clicking a row navigates to the order detail page
+- Nav link added to all pages
+
+Also added:
+- **Spot Check summary row** on homepage stats (pass rate, checked, flagged, skipped)
+- **SpotCheckPanel** on order detail page — collapses below ReextractionPanel, shows PASS/FLAG/SKIP badge, confidence, and reason
+
+API route: `/api/spot-check` — reads `Spot Check` tab, supports `?job=<job_number>` for per-job lookup.
+
+#### New clients added by Ayon (session 16)
+- **Roofing Centre Group Ltd** (SIG Roofing) — `config/clients/roofing_centre.yaml`, `parser: sig_roofing`. Subject filter: `"Purchase Order - ME9 7NU"`. Order number from filename.
+- **CCT Worldwide Limited** — `config/clients/cct_worldwide.yaml`, `parser: cct_worldwide`. Subject filter: `cctworldwideltd.com`.
+- **Colombier (UK) Ltd** — `config/clients/colombier.yaml`, `parser: colombier`. Subject filter: `colombier.com`. GPT-4o vision fallback for scanned PDFs.
+
+#### Azure infrastructure document reviewed
+- Ayon prepared a 15-page IT Security & Infrastructure response document for the Firmin client
+- Target production stack: Azure Container Apps, Microsoft Graph API (Outlook), Azure OpenAI, Azure PostgreSQL, Azure Blob Storage, Azure Key Vault, Azure Monitor
+- Estimated prod cost: £149–£365/month. Dev environment: £20–40/month.
+- Practice environment setup deferred — estimated 3-4 days of work, Graph API / Outlook integration is the biggest piece.
 
 ### What's been completed this session (2026-04-23, session 11)
 
@@ -583,8 +643,9 @@ LOG_LEVEL=INFO
 - **Kemsley location mapping** — RESOLVED via conditional_locations (session 5). No staff contact needed.
 - **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
-- **Multi-client expansion** — 8 clients live ✅: St Regis, Unipet, Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon. Horizon collection point known_locations pending (ME20 7NA → Scan Global name TBD). InContrast verification pending (admins not entering SDN in Proteo). Dashboard client_type() needs Horizon + InContrast entries for comparison join.
-- **Playwright RPA auto-entry** — GREEN orders not yet auto-submitted to Proteo TMS
+- **Multi-client expansion** — 12 clients live ✅: St Regis Fibre, St Regis Reels, Unipet, Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon, Roofing Centre, CCT Worldwide, Colombier. Goal: 15+ by end of April. Horizon collection point known_locations pending (ME20 7NA → Scan Global name TBD).
+- **Spot check 15 flagged orders** — need investigation to determine if genuine extraction errors or false positives
+- **Playwright RPA auto-entry** — RPA backfill ~399 DS Smith jobs still pending. Unipet RPA blocked by AJAX overlay bug (Telerik multi-item dropdown triggers reload). `--ds-smith-only` flag added to backfill script as workaround.
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
