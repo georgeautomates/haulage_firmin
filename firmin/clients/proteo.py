@@ -627,7 +627,7 @@ class ProteoClient:
                 # global across all clients, so a matching job number from Pallet Track
                 # or another company can be returned instead of the DS Smith job.
                 client = str(row_data.get("client_name", "")).lower()
-                if not any(kw in client for kw in ("st regis", "ds smith", "fibre", "reels", "unipet", "revolution beauty", "aim", "sig trading", "community playthings", "eurocoils", "incontrast", "sti line", "roofing centre")):
+                if not any(kw in client for kw in ("st regis", "ds smith", "fibre", "reels", "unipet", "revolution beauty", "aim", "sig trading", "community playthings", "eurocoils", "incontrast", "sti line", "roofing centre", "cct worldwide", "colombier")):
                     logger.warning(
                         "Proteo: job %s result rejected — client_name '%s' does not match known clients",
                         job_number, row_data.get("client_name"),

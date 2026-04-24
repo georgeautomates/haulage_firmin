@@ -1,0 +1,26 @@
+client_id: colombier
+display_name: "Colombier (UK) Ltd"
+
+email_filters:
+  subject_contains:
+    - "colombier.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+parser: "colombier"
+
+defaults:
+  client_name: "Colombier (UK) Ltd"
+  goods_type: "Palletised"
+  collection_point: "Colombier - Sittingbourne"
+  business_type: "General | Part/Full Load"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+known_locations: {}
+
+confidence_thresholds:
+  green: 80
+  yellow: 50

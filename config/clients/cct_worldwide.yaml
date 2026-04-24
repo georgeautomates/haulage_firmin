@@ -1,0 +1,28 @@
+client_id: cct_worldwide
+display_name: "CCT Worldwide Limited"
+
+email_filters:
+  subject_contains:
+    - "cctworldwideltd.com"
+  has_attachment: true
+  attachment_type: "pdf"
+
+parser: "cct_worldwide"
+
+defaults:
+  client_name: "CCT Worldwide Limited"
+  goods_type: "Palletised"
+  collection_point: "CCT Worldwide - Gravesend"
+  collection_postcode: "DA12 2PL"
+  business_type: "General | Part/Full Load"
+
+sheets:
+  spreadsheet_id: "1uEst-r23EiTyfdmL6gx_YQMuzR0s7yyx-qJVLIUyDSI"
+  worksheet_name: "Actual Entry"
+
+known_locations:
+  "DA12 2PL": "CCT Worldwide - Gravesend"
+
+confidence_thresholds:
+  green: 80
+  yellow: 50
