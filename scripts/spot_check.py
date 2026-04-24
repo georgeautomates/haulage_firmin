@@ -54,12 +54,41 @@ SPOT_CHECK_HEADERS = [
 # Client-aware prompts
 # ---------------------------------------------------------------------------
 
-# DS Smith and Unipet: email body/subject carry no reliable job detail.
-# Only check that the sender domain matches the client name.
+# ---------------------------------------------------------------------------
+# Domain → client name mapping (used to build the domain-only prompt)
+# One entry per client profile. subject_contains keyword → expected client_name fragment.
+# ---------------------------------------------------------------------------
+DOMAIN_CLIENT_MAP = {
+    # DS Smith sub-clients — both map from the same domain
+    "dssmith.com":              ["St Regis Fibre A/C", "St Regis Reels"],
+    # Other clients — single mapping
+    "unipet.co.uk":             ["Unipet International Ltd"],
+    "revolutionbeauty.com":     ["Revolution Beauty Ltd"],
+    "cctworldwideltd.com":      ["CCT Worldwide Limited"],
+    "colombier.com":            ["Colombier (UK) Ltd"],
+    "danxcarousel.com":         ["Community Playthings"],
+    "eurocoils.co.uk":          ["Eurocoils Limited"],
+    "scangl.com":               ["Horizon International Cargo"],
+    # AIM — subject keyword rather than domain
+    "FIRMINS BOOKING":          ["AIM (SIG Trading Limited)"],
+    "BOOKING FIRMINS":          ["AIM (SIG Trading Limited)"],
+    "Purchase order Booking":   ["AIM (SIG Trading Limited)"],
+    # InContrast — subject keyword
+    "Collection for:":          ["STI Line Ltd T/A InContrast", "STI Line Ltd  T/A InContrast"],
+    # Roofing Centre — subject keyword
+    "Purchase Order - ME9 7NU": ["Roofing Centre Group Ltd"],
+}
+
+# Build a human-readable mapping string for the prompt
+_DOMAIN_MAP_TEXT = "\n".join(
+    f'- "{k}" → client should be: {" OR ".join(repr(v) for v in vals)}'
+    for k, vals in DOMAIN_CLIENT_MAP.items()
+)
+
 PROMPT_DOMAIN_ONLY = """\
 You are a quality-control assistant for a UK road haulage company.
 
-An automated system received a booking email and extracted order details from the PDF attachment.
+An automated system matched a booking email to a client and extracted order details.
 
 --- EMAIL ---
 Subject: {email_subject}
@@ -68,17 +97,17 @@ Subject: {email_subject}
 Job Number:  {job_number}
 Client:      {client_name}
 
+--- PRE-MATCHED SIGNAL ---
+Keyword/domain found in subject: {matched_keyword}
+Expected clients for that keyword: {expected_clients}
+
 --- TASK ---
-IMPORTANT: These are forwarded emails. The subject line is a conversational thread title
-and does NOT describe every job in the PDF — do not use it to judge the job details.
+The keyword/domain was found in the subject by the system. Your job is to confirm whether
+the extracted client name is consistent with the expected clients for that keyword.
 
-Only FLAG if the sender domain in the subject clearly does NOT match the client name.
-Valid domain → client mappings (both directions must agree):
-- @dssmith.com → client must be "St Regis Fibre A/C" OR "St Regis Reels" (both are DS Smith sub-clients)
-- unipet.co.uk → client must be "Unipet International Ltd"
-- revolutionbeauty.com → client must be "Revolution Beauty Ltd"
-
-If the domain and client are consistent with the above, return PASS.
+If the extracted client matches one of the expected clients → PASS (HIGH confidence).
+If the extracted client does NOT match any expected client → FLAG (HIGH confidence).
+If no keyword was found (matched_keyword is "none") → PASS (LOW confidence, cannot verify).
 
 Return ONLY this JSON, no markdown:
 {{
@@ -136,24 +165,42 @@ Return ONLY this JSON, no markdown:
 """
 
 
+def _find_keyword(subject: str) -> tuple[str, list[str]]:
+    """Return (matched_keyword, expected_clients) by scanning the subject.
+    Returns ('none', []) if no known keyword is present."""
+    for keyword, clients in DOMAIN_CLIENT_MAP.items():
+        if keyword.lower() in subject.lower():
+            return keyword, clients
+    return "none", []
+
+
 def build_prompt(row: dict) -> str:
     client = str(row.get("client_name", "")).lower()
+    subject = row.get("email_subject", "").strip() or "(no subject)"
+    job = row.get("delivery_order_number", "")
+    client_name = row.get("client_name", "")
+
+    # Revolution Beauty has rich structured data in subject + body
     if "revolution" in client:
         return PROMPT_REVOLUTION_BEAUTY.format(
-            email_subject=row.get("email_subject", "").strip() or "(no subject)",
+            email_subject=subject,
             email_body=(row.get("email_body", "") or "")[:1500].strip() or "(no body)",
-            job_number=row.get("delivery_order_number", ""),
-            client_name=row.get("client_name", ""),
+            job_number=job,
+            client_name=client_name,
             collection_point=row.get("collection_point", ""),
             delivery_point=row.get("delivery_point", ""),
             collection_date=row.get("collection_date", ""),
             order_number=row.get("order_number", ""),
         )
-    # DS Smith (all variants) and Unipet — domain-only check
+
+    # All other clients: Python finds the keyword, AI confirms the match
+    matched_keyword, expected_clients = _find_keyword(subject)
     return PROMPT_DOMAIN_ONLY.format(
-        email_subject=row.get("email_subject", "").strip() or "(no subject)",
-        job_number=row.get("delivery_order_number", ""),
-        client_name=row.get("client_name", ""),
+        email_subject=subject,
+        job_number=job,
+        client_name=client_name,
+        matched_keyword=matched_keyword,
+        expected_clients=", ".join(expected_clients) if expected_clients else "unknown",
     )
 
 
