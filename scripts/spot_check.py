@@ -1,12 +1,10 @@
 """
-Nightly AI spot-check: use the email subject + body to verify that each order's
-extraction landed on the correct job / client.
+Nightly AI spot-check: use email subject + body to verify extracted order data.
 
-For each recent Actual Entry row that has email_subject populated (and hasn't
-been spot-checked yet), ask gpt-4o-mini:
-  "Does the extracted data look consistent with what the email says?"
-
-Writes results to a 'Spot Check' sheet tab.
+Approach: client-aware data extraction, not domain matching.
+- Each client has a CHECK_LEVEL: SKIP (no useful data in email) or CHECK (verifiable data present).
+- For CHECK clients, we tell the AI exactly what fields are verifiable and what to look for.
+- For SKIP clients, we record SKIP instead of burning API calls on unverifiable rows.
 
 Usage:
     python scripts/spot_check.py                  # check all un-checked rows
@@ -40,10 +38,10 @@ SPOT_CHECK_HEADERS = [
     "job_number",
     "client_name",
     "checked_at",
-    "result",           # PASS or FLAG
-    "confidence",       # HIGH / MEDIUM / LOW
-    "reason",           # brief explanation — populated on FLAG, short note on PASS
-    "email_subject",    # copied for reference
+    "result",           # PASS / FLAG / SKIP
+    "confidence",       # HIGH / MEDIUM / LOW / N/A
+    "reason",
+    "email_subject",
     "our_collection",
     "our_delivery",
     "our_price",
@@ -51,157 +49,226 @@ SPOT_CHECK_HEADERS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Client-aware prompts
+# Client check configurations
+# ---------------------------------------------------------------------------
+# Each entry maps a client_name fragment (lowercase) to what we can verify.
+# check_level: "skip" = no useful email data, "check" = verifiable fields present
+# verifiable: human-readable description of what can be checked (shown in prompt)
+
+CLIENT_CONFIGS = [
+    # Rich structured data — full cross-check
+    {
+        "match": "revolution beauty",
+        "check_level": "check",
+        "prompt_template": "revolution_beauty",
+    },
+    # Colombier: subject contains delivery postcode, load number, delivery date/time
+    # e.g. "Load 66985 Full load of reels on plts - del to ST4 4FA - del Wed 29/4 @ 10am"
+    {
+        "match": "colombier",
+        "check_level": "check",
+        "prompt_template": "subject_postcode_date",
+        "notes": (
+            "Subject contains delivery postcode (e.g. 'ST4 4FA'), load number, and delivery date. "
+            "Cross-check delivery postcode and date against extraction."
+        ),
+    },
+    # Roofing Centre: subject contains delivery postcode and order number
+    # e.g. "Purchase Order - ME9 7NU - 3101 - 3101400954"
+    {
+        "match": "roofing centre",
+        "check_level": "check",
+        "prompt_template": "subject_postcode_order",
+        "notes": (
+            "Subject contains delivery postcode (e.g. 'ME9 7NU') and order number (e.g. '3101400954'). "
+            "Cross-check delivery postcode and order number against extraction."
+        ),
+    },
+    # AIM: subject contains order number
+    # e.g. "Purchase order Booking - 315597"
+    {
+        "match": "aim",
+        "check_level": "check",
+        "prompt_template": "subject_order_number",
+        "notes": (
+            "Subject contains the order/booking number after a dash (e.g. 'Purchase order Booking - 315597'). "
+            "Cross-check that number against the extracted order number."
+        ),
+    },
+    # InContrast: subject contains collection date
+    # e.g. "Collection for: Tuesday 14/04/2026"
+    {
+        "match": "incontrast",
+        "check_level": "check",
+        "prompt_template": "subject_date",
+        "notes": (
+            "Subject contains the collection date (e.g. 'Collection for: Tuesday 14/04/2026'). "
+            "Cross-check that date against the extracted collection date."
+        ),
+    },
+    # CCT Worldwide: subject may contain delivery postcode
+    # e.g. "QUOTE 12 PALLETS/ 14 SPACES BD19 AM REQUIRED"
+    {
+        "match": "cct worldwide",
+        "check_level": "check",
+        "prompt_template": "subject_postcode_order",
+        "notes": (
+            "Subject may contain a delivery postcode district (e.g. 'BD19'). "
+            "Cross-check delivery postcode against extraction if a postcode is present."
+        ),
+    },
+    # DS Smith / St Regis — forwarded threads, no job detail in email
+    {"match": "st regis",      "check_level": "skip", "skip_reason": "DS Smith forwarded email — no job detail in subject or body"},
+    # Unipet — generic covering note
+    {"match": "unipet",        "check_level": "skip", "skip_reason": "Unipet covering email — manifest is in PDF attachment only"},
+    # Horizon — reference numbers only, collection often UNMATCHED
+    {"match": "horizon",       "check_level": "skip", "skip_reason": "Horizon email — only internal reference numbers, no verifiable extraction data"},
+    # Community Playthings / Eurocoils — backfill rows, no email content
+    {"match": "community playthings", "check_level": "skip", "skip_reason": "No email content stored for this client"},
+    {"match": "eurocoils",     "check_level": "skip", "skip_reason": "No email content stored for this client"},
+    # Colombier catch-all (already handled above, but just in case)
+    {"match": "colombier",     "check_level": "skip", "skip_reason": "Colombier email — handled above"},
+]
+
+# ---------------------------------------------------------------------------
+# Pure Python checks — deterministic, no AI involvement in the verdict
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Domain → client name mapping (used to build the domain-only prompt)
-# One entry per client profile. subject_contains keyword → expected client_name fragment.
-# ---------------------------------------------------------------------------
-DOMAIN_CLIENT_MAP = {
-    # DS Smith sub-clients — both map from the same domain
-    "dssmith.com":              ["St Regis Fibre A/C", "St Regis Reels"],
-    # Other clients — single mapping
-    "unipet.co.uk":             ["Unipet International Ltd"],
-    "revolutionbeauty.com":     ["Revolution Beauty Ltd"],
-    "cctworldwideltd.com":      ["CCT Worldwide Limited"],
-    "colombier.com":            ["Colombier (UK) Ltd"],
-    "danxcarousel.com":         ["Community Playthings"],
-    "eurocoils.co.uk":          ["Eurocoils Limited"],
-    "scangl.com":               ["Horizon International Cargo"],
-    # AIM — subject keyword rather than domain
-    "FIRMINS BOOKING":          ["AIM (SIG Trading Limited)"],
-    "BOOKING FIRMINS":          ["AIM (SIG Trading Limited)"],
-    "Purchase order Booking":   ["AIM (SIG Trading Limited)"],
-    # InContrast — subject keyword
-    "Collection for:":          ["STI Line Ltd T/A InContrast", "STI Line Ltd  T/A InContrast"],
-    # Roofing Centre — subject keyword
-    "Purchase Order - ME9 7NU": ["Roofing Centre Group Ltd"],
-}
-
-# Build a human-readable mapping string for the prompt
-_DOMAIN_MAP_TEXT = "\n".join(
-    f'- "{k}" → client should be: {" OR ".join(repr(v) for v in vals)}'
-    for k, vals in DOMAIN_CLIENT_MAP.items()
-)
-
-PROMPT_DOMAIN_ONLY = """\
-You are a quality-control assistant for a UK road haulage company.
-
-An automated system matched a booking email to a client and extracted order details.
-
---- EMAIL ---
-Subject: {email_subject}
-
---- EXTRACTED ORDER ---
-Job Number:  {job_number}
-Client:      {client_name}
-
---- PRE-MATCHED SIGNAL ---
-Keyword/domain found in subject: {matched_keyword}
-Expected clients for that keyword: {expected_clients}
-
---- TASK ---
-The keyword/domain was found in the subject by the system. Your job is to confirm whether
-the extracted client name is consistent with the expected clients for that keyword.
-
-If the extracted client matches one of the expected clients → PASS (HIGH confidence).
-If the extracted client does NOT match any expected client → FLAG (HIGH confidence).
-If no keyword was found (matched_keyword is "none") → PASS (LOW confidence, cannot verify).
-
-Return ONLY this JSON, no markdown:
-{{
-  "result": "PASS" or "FLAG",
-  "confidence": "HIGH", "MEDIUM", or "LOW",
-  "reason": "one sentence citing the specific evidence"
-}}
-"""
-
-# Revolution Beauty: subject and body both contain structured job detail.
-# Subject: "Booking DD/MM/YY: [Town] to [Town] (Load Type)"
-# Body: "Collect GXO [Town]", "Deliver [Company] [Town]", "Collection DD/MM/YY @ HH:MM"
-PROMPT_REVOLUTION_BEAUTY = """\
-You are a quality-control assistant for a UK road haulage company.
-
-An automated system received a Revolution Beauty booking email and extracted order details.
-The email subject and body contain structured booking information — use them to verify the extraction.
-
---- EMAIL ---
-Subject: {email_subject}
-Body:
-{email_body}
-
---- EXTRACTED ORDER ---
-Job Number:       {job_number}
-Client:           {client_name}
-Collection Point: {collection_point}
-Delivery Point:   {delivery_point}
-Collection Date:  {collection_date}
-Order Number:     {order_number}
-
---- TASK ---
-The subject line follows this pattern: "Booking DD/MM/YY: [From Town] to [To Town] (Load Type)"
-The body contains: "Collect GXO [Town]", "Deliver [Company] [Town]", "Collection DD/MM/YY @ HH:MM"
-
-Cross-check these specific things:
-1. Sender domain must be revolutionbeauty.com — if not, FLAG immediately.
-2. The destination town in the subject (after "to") should appear somewhere in the extracted
-   delivery point string. E.g. subject "to Nottingham" and delivery "Boots UK - Nottingham" → PASS.
-   Only FLAG if the town is completely absent from the delivery point.
-3. The delivery company+town in the body ("Deliver [Company] [Town]") — the town should match
-   the delivery point. The company name may differ from our internal name, so focus on the town.
-4. The collection date in the subject (DD/MM/YY) should match the extracted collection date (DD/MM/YYYY).
-5. Collection point should always be GXO / Clipper / Swadlincote — if it's something else, FLAG.
-
-FLAG only on a clear, specific contradiction where the town in the email is completely different
-from the town in the extraction. Minor name formatting differences (e.g. "HUT.COM" vs "THG") are fine.
-
-Return ONLY this JSON, no markdown:
-{{
-  "result": "PASS" or "FLAG",
-  "confidence": "HIGH", "MEDIUM", or "LOW",
-  "reason": "one sentence citing the specific field and evidence"
-}}
-"""
+def _normalise_date(d: str) -> str:
+    """Convert DD/MM/YY or DD/MM/YYYY to DD/MM/YYYY."""
+    d = d.strip()
+    m = re.match(r'(\d{2}/\d{2}/)(\d{2})$', d)
+    if m:
+        return m.group(1) + "20" + m.group(2)
+    return d
 
 
-def _find_keyword(subject: str) -> tuple[str, list[str]]:
-    """Return (matched_keyword, expected_clients) by scanning the subject.
-    Returns ('none', []) if no known keyword is present."""
-    for keyword, clients in DOMAIN_CLIENT_MAP.items():
-        if keyword.lower() in subject.lower():
-            return keyword, clients
-    return "none", []
+def check_revolution_beauty(row: dict) -> tuple[str, str, str]:
+    """Returns (result, confidence, reason)."""
+    subject = row.get("email_subject", "")
+    delivery_point = row.get("delivery_point", "").lower()
+    collection_point = row.get("collection_point", "").lower()
+    collection_date = _normalise_date(row.get("collection_date", ""))
+
+    flags = []
+
+    # 1. Destination town: "Booking DD/MM/YY: From to TOWN (type)"
+    town_match = re.search(r'\bto\s+([A-Za-z][A-Za-z\s\-]+?)(?:\s*\(|\s*\||\s*$)', subject, re.IGNORECASE)
+    if town_match:
+        town = town_match.group(1).strip().lower()
+        if town and town not in delivery_point:
+            flags.append(f"delivery town '{town_match.group(1).strip()}' not found in delivery point '{row.get('delivery_point','')}'")
+
+    # 2. Collection date: "Booking DD/MM/YY:" in subject
+    date_match = re.search(r'Booking\s+(\d{2}/\d{2}/\d{2,4})', subject, re.IGNORECASE)
+    if date_match:
+        subj_date = _normalise_date(date_match.group(1))
+        if subj_date and collection_date and subj_date != collection_date:
+            flags.append(f"collection date in subject '{subj_date}' does not match extracted '{collection_date}'")
+
+    # 3. Collection point should be GXO/Clipper/Swadlincote
+    if collection_point and not any(k in collection_point for k in ["gxo", "clipper", "swadlincote"]):
+        flags.append(f"collection point '{row.get('collection_point','')}' is not GXO/Clipper/Swadlincote")
+
+    if flags:
+        return "FLAG", "HIGH", "; ".join(flags)
+    return "PASS", "HIGH", "Delivery town, collection date, and collection point all match the email"
 
 
-def build_prompt(row: dict) -> str:
-    client = str(row.get("client_name", "")).lower()
-    subject = row.get("email_subject", "").strip() or "(no subject)"
-    job = row.get("delivery_order_number", "")
+def check_subject_postcode(row: dict, subject: str) -> tuple[str, str, str]:
+    """Check if a postcode in the subject matches the extracted delivery postcode."""
+    postcode_match = re.search(r'\b([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})\b', subject)
+    if not postcode_match:
+        # Try postcode district only (e.g. BD19)
+        district_match = re.search(r'\b([A-Z]{1,2}\d{1,2}[A-Z]?)\b', subject)
+        if district_match:
+            district = district_match.group(1).upper()
+            delivery_pc = row.get("delivery_postcode", "").upper()
+            if delivery_pc and not delivery_pc.startswith(district):
+                return "FLAG", "MEDIUM", f"postcode district '{district}' in subject does not match extracted delivery postcode '{delivery_pc}'"
+            return "PASS", "MEDIUM" if delivery_pc else "LOW", f"postcode district '{district}' consistent with extracted delivery postcode '{delivery_pc}'"
+        return "PASS", "LOW", "no postcode found in subject to verify"
+
+    subj_pc = re.sub(r'\s+', ' ', postcode_match.group(1).upper().strip())
+    deliv_pc = re.sub(r'\s+', ' ', row.get("delivery_postcode", "").upper().strip())
+    if deliv_pc and subj_pc != deliv_pc:
+        return "FLAG", "HIGH", f"postcode '{subj_pc}' in subject does not match extracted delivery postcode '{deliv_pc}'"
+    return "PASS", "HIGH", f"postcode '{subj_pc}' matches extracted delivery postcode"
+
+
+def check_subject_order_number(row: dict, subject: str) -> tuple[str, str, str]:
+    """Check if the order number in the subject matches the extracted order number."""
+    our_order = str(row.get("order_number", "") or row.get("delivery_order_number", "")).strip()
+    if not our_order:
+        return "PASS", "LOW", "no extracted order number to compare"
+    if our_order in subject:
+        return "PASS", "HIGH", f"order number '{our_order}' found in subject"
+    # Try finding any number in the subject that looks like an order number
+    nums = re.findall(r'\b(\d{5,})\b', subject)
+    if nums and our_order not in nums:
+        return "FLAG", "HIGH", f"order number '{our_order}' not found in subject (subject contains: {', '.join(nums[:3])})"
+    return "PASS", "LOW", "could not verify order number from subject"
+
+
+def check_subject_date(row: dict, subject: str) -> tuple[str, str, str]:
+    """Check if a date in the subject matches the extracted collection date."""
+    collection_date = _normalise_date(row.get("collection_date", ""))
+    date_match = re.search(r'(\d{1,2}/\d{2}/\d{2,4})', subject)
+    if not date_match:
+        # Try "Tuesday 14/04/2026" style
+        date_match = re.search(r'\b(\d{1,2}/\d{2}/\d{2,4})\b', subject)
+    if date_match:
+        subj_date = _normalise_date(date_match.group(1))
+        if collection_date and subj_date != collection_date:
+            return "FLAG", "HIGH", f"date '{subj_date}' in subject does not match extracted collection date '{collection_date}'"
+        return "PASS", "HIGH", f"date '{subj_date}' in subject matches extracted collection date '{collection_date}'"
+    return "PASS", "LOW", "no date found in subject to verify"
+
+
+def get_config(client_name: str) -> dict:
+    """Return the first matching client config, or a default skip."""
+    c = client_name.lower()
+    for cfg in CLIENT_CONFIGS:
+        if cfg["match"] in c:
+            return cfg
+    return {"check_level": "skip", "skip_reason": "No spot-check config for this client"}
+
+
+def run_checks(row: dict) -> tuple[str, str, str] | None:
+    """
+    Run Python-side checks for the row's client.
+    Returns (result, confidence, reason) or None if row should be skipped.
+    """
     client_name = row.get("client_name", "")
+    cfg = get_config(client_name)
 
-    # Revolution Beauty has rich structured data in subject + body
-    if "revolution" in client:
-        return PROMPT_REVOLUTION_BEAUTY.format(
-            email_subject=subject,
-            email_body=(row.get("email_body", "") or "")[:1500].strip() or "(no body)",
-            job_number=job,
-            client_name=client_name,
-            collection_point=row.get("collection_point", ""),
-            delivery_point=row.get("delivery_point", ""),
-            collection_date=row.get("collection_date", ""),
-            order_number=row.get("order_number", ""),
-        )
+    if cfg["check_level"] == "skip":
+        return None
 
-    # All other clients: Python finds the keyword, AI confirms the match
-    matched_keyword, expected_clients = _find_keyword(subject)
-    return PROMPT_DOMAIN_ONLY.format(
-        email_subject=subject,
-        job_number=job,
-        client_name=client_name,
-        matched_keyword=matched_keyword,
-        expected_clients=", ".join(expected_clients) if expected_clients else "unknown",
-    )
+    subject = row.get("email_subject", "").strip()
+    template = cfg.get("prompt_template", "")
+
+    if template == "revolution_beauty":
+        return check_revolution_beauty(row)
+
+    if template in ("subject_postcode_date", "subject_postcode_order"):
+        result, conf, reason = check_subject_postcode(row, subject)
+        if result == "FLAG":
+            return result, conf, reason
+        # Also check order number for postcode_order templates
+        if template == "subject_postcode_order":
+            result2, conf2, reason2 = check_subject_order_number(row, subject)
+            if result2 == "FLAG":
+                return result2, conf2, reason2
+        return result, conf, reason
+
+    if template == "subject_order_number":
+        return check_subject_order_number(row, subject)
+
+    if template == "subject_date":
+        return check_subject_date(row, subject)
+
+    return "PASS", "LOW", "no specific checks configured for this client"
 
 
 def get_auth():
@@ -232,44 +299,37 @@ def ensure_spot_check_sheet(sh: gspread.Spreadsheet) -> gspread.Worksheet:
 
 def load_actual_entry(ws: gspread.Worksheet) -> list[dict]:
     rows = ws.get_all_records(default_blank="")
-    # Normalise keys (strip whitespace, lowercase)
     return [{k.strip().lower(): v for k, v in row.items()} for row in rows]
 
 
 def load_checked_jobs(ws: gspread.Worksheet) -> set[str]:
     try:
-        vals = ws.col_values(1)[1:]  # skip header
+        vals = ws.col_values(1)[1:]
         return {str(v).strip() for v in vals if v}
     except Exception:
         return set()
 
 
-def call_spot_check(client: OpenAI, row: dict) -> dict:
-    prompt = build_prompt(row)
+def call_spot_check(openai_client: OpenAI, row: dict) -> dict:
+    check = run_checks(row)
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        content = response.choices[0].message.content or ""
-        clean = re.sub(r"```json|```", "", content).strip()
-        data = json.loads(clean)
+    if check is None:
+        cfg = get_config(row.get("client_name", ""))
         return {
-            "result": data.get("result", "FLAG").upper(),
-            "confidence": data.get("confidence", "LOW").upper(),
-            "reason": data.get("reason", ""),
+            "result": "SKIP",
+            "confidence": "N/A",
+            "reason": cfg.get("skip_reason", "No email data to verify against"),
         }
-    except Exception as e:
-        return {"result": "FLAG", "confidence": "LOW", "reason": f"Spot-check error: {e}"}
+
+    result, confidence, reason = check
+    return {"result": result, "confidence": confidence, "reason": reason}
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=None, help="Max rows to check")
+    parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--all", action="store_true", help="Re-check already-checked rows")
-    parser.add_argument("--dry-run", action="store_true", help="Print verdicts without writing to sheet")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     gc = get_auth()
@@ -296,33 +356,34 @@ def main():
     if args.limit:
         to_check = to_check[:args.limit]
 
-    print(f"  Checking {len(to_check)} rows with {MODEL}...\n")
+    print(f"  Checking {len(to_check)} rows...\n")
 
     if not to_check:
         print("Nothing to check.")
         return
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    openai_client = None  # no longer used — all checks are Python-side
 
-    passed = flagged = errors = 0
+    passed = flagged = skipped = 0
     rows_to_write = []
 
     for i, row in enumerate(to_check, 1):
         job = str(row.get("delivery_order_number", "")).strip()
         subject = row.get("email_subject", "").strip()
-        verdict = call_spot_check(client, row)
+        verdict = call_spot_check(openai_client, row)
 
         result = verdict["result"]
         confidence = verdict["confidence"]
         reason = verdict["reason"]
 
-        symbol = "PASS" if result == "PASS" else "FLAG"
-        print(f"  [{i}/{len(to_check)}] {job} - {symbol} ({confidence}) - {reason}")
-
-        if result == "PASS":
+        if result == "SKIP":
+            skipped += 1
+        elif result == "PASS":
             passed += 1
         else:
             flagged += 1
+
+        print(f"  [{i}/{len(to_check)}] {job} [{row.get('client_name','')}] - {result} ({confidence}) - {reason}")
 
         rows_to_write.append([
             job,
@@ -338,7 +399,7 @@ def main():
             row.get("order_number", ""),
         ])
 
-    print(f"\nResults: {passed} PASS · {flagged} FLAG · {errors} errors")
+    print(f"\nResults: {passed} PASS · {flagged} FLAG · {skipped} SKIP")
 
     if args.dry_run:
         print("\n(dry-run — nothing written)")
