@@ -50,11 +50,52 @@ SPOT_CHECK_HEADERS = [
     "our_order_number",
 ]
 
-SPOT_CHECK_PROMPT = """\
+# ---------------------------------------------------------------------------
+# Client-aware prompts
+# ---------------------------------------------------------------------------
+
+# DS Smith and Unipet: email body/subject carry no reliable job detail.
+# Only check that the sender domain matches the client name.
+PROMPT_DOMAIN_ONLY = """\
 You are a quality-control assistant for a UK road haulage company.
 
 An automated system received a booking email and extracted order details from the PDF attachment.
-Your job is to check whether the extracted client and job number are plausible given the email.
+
+--- EMAIL ---
+Subject: {email_subject}
+
+--- EXTRACTED ORDER ---
+Job Number:  {job_number}
+Client:      {client_name}
+
+--- TASK ---
+IMPORTANT: These are forwarded emails. The subject line is a conversational thread title
+and does NOT describe every job in the PDF — do not use it to judge the job details.
+
+Only FLAG if the sender domain in the subject clearly does NOT match the client name.
+Valid domain → client mappings (both directions must agree):
+- @dssmith.com → client must be "St Regis Fibre A/C" OR "St Regis Reels" (both are DS Smith sub-clients)
+- unipet.co.uk → client must be "Unipet International Ltd"
+- revolutionbeauty.com → client must be "Revolution Beauty Ltd"
+
+If the domain and client are consistent with the above, return PASS.
+
+Return ONLY this JSON, no markdown:
+{{
+  "result": "PASS" or "FLAG",
+  "confidence": "HIGH", "MEDIUM", or "LOW",
+  "reason": "one sentence citing the specific evidence"
+}}
+"""
+
+# Revolution Beauty: subject and body both contain structured job detail.
+# Subject: "Booking DD/MM/YY: [Town] to [Town] (Load Type)"
+# Body: "Collect GXO [Town]", "Deliver [Company] [Town]", "Collection DD/MM/YY @ HH:MM"
+PROMPT_REVOLUTION_BEAUTY = """\
+You are a quality-control assistant for a UK road haulage company.
+
+An automated system received a Revolution Beauty booking email and extracted order details.
+The email subject and body contain structured booking information — use them to verify the extraction.
 
 --- EMAIL ---
 Subject: {email_subject}
@@ -67,34 +108,53 @@ Client:           {client_name}
 Collection Point: {collection_point}
 Delivery Point:   {delivery_point}
 Collection Date:  {collection_date}
-Delivery Date:    {delivery_date}
-Price:            {price}
 Order Number:     {order_number}
 
 --- TASK ---
-IMPORTANT CONTEXT: These emails are forwarding chains. The email subject is often a
-short conversational thread title (e.g. "add on lidl luton for tomorrow") that does NOT
-describe every job in the PDF attachment — the attachment may contain many different jobs.
-Do NOT flag an order just because the email subject mentions a different location or client.
+The subject line follows this pattern: "Booking DD/MM/YY: [From Town] to [To Town] (Load Type)"
+The body contains: "Collect GXO [Town]", "Deliver [Company] [Town]", "Collection DD/MM/YY @ HH:MM"
 
-Only FLAG if you find a clear, specific contradiction:
-1. The sender domain in the subject (e.g. @dssmith.com, revolutionbeauty.com, unipet.co.uk)
-   does NOT match the extracted client name. This is the strongest signal.
-2. A specific job number is mentioned in the email body and it clearly does NOT match the
-   extracted job number.
-3. Any other specific, concrete evidence of a wrong extraction (not just a vague mismatch
-   between the thread subject and the order details).
+Cross-check these specific things:
+1. Sender domain must be revolutionbeauty.com — if not, FLAG immediately.
+2. The destination town in the subject (after "to") should appear somewhere in the extracted
+   delivery point string. E.g. subject "to Nottingham" and delivery "Boots UK - Nottingham" → PASS.
+   Only FLAG if the town is completely absent from the delivery point.
+3. The delivery company+town in the body ("Deliver [Company] [Town]") — the town should match
+   the delivery point. The company name may differ from our internal name, so focus on the town.
+4. The collection date in the subject (DD/MM/YY) should match the extracted collection date (DD/MM/YYYY).
+5. Collection point should always be GXO / Clipper / Swadlincote — if it's something else, FLAG.
 
-If the sender domain matches the client, PASS — the subject line content alone is not
-a reason to FLAG.
+FLAG only on a clear, specific contradiction where the town in the email is completely different
+from the town in the extraction. Minor name formatting differences (e.g. "HUT.COM" vs "THG") are fine.
 
-Return ONLY this JSON with no markdown, no explanation:
+Return ONLY this JSON, no markdown:
 {{
   "result": "PASS" or "FLAG",
   "confidence": "HIGH", "MEDIUM", or "LOW",
-  "reason": "one sentence — cite the specific evidence for your verdict"
+  "reason": "one sentence citing the specific field and evidence"
 }}
 """
+
+
+def build_prompt(row: dict) -> str:
+    client = str(row.get("client_name", "")).lower()
+    if "revolution" in client:
+        return PROMPT_REVOLUTION_BEAUTY.format(
+            email_subject=row.get("email_subject", "").strip() or "(no subject)",
+            email_body=(row.get("email_body", "") or "")[:1500].strip() or "(no body)",
+            job_number=row.get("delivery_order_number", ""),
+            client_name=row.get("client_name", ""),
+            collection_point=row.get("collection_point", ""),
+            delivery_point=row.get("delivery_point", ""),
+            collection_date=row.get("collection_date", ""),
+            order_number=row.get("order_number", ""),
+        )
+    # DS Smith (all variants) and Unipet — domain-only check
+    return PROMPT_DOMAIN_ONLY.format(
+        email_subject=row.get("email_subject", "").strip() or "(no subject)",
+        job_number=row.get("delivery_order_number", ""),
+        client_name=row.get("client_name", ""),
+    )
 
 
 def get_auth():
@@ -138,18 +198,7 @@ def load_checked_jobs(ws: gspread.Worksheet) -> set[str]:
 
 
 def call_spot_check(client: OpenAI, row: dict) -> dict:
-    prompt = SPOT_CHECK_PROMPT.format(
-        email_subject=row.get("email_subject", "").strip() or "(no subject)",
-        email_body=(row.get("email_body", "") or "")[:2000].strip() or "(no body)",
-        job_number=row.get("delivery_order_number", ""),
-        client_name=row.get("client_name", ""),
-        collection_point=row.get("collection_point", ""),
-        delivery_point=row.get("delivery_point", ""),
-        collection_date=row.get("collection_date", ""),
-        delivery_date=row.get("delivery_date", ""),
-        price=row.get("rate", ""),
-        order_number=row.get("order_number", ""),
-    )
+    prompt = build_prompt(row)
 
     try:
         response = client.chat.completions.create(
