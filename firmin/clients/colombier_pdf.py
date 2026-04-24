@@ -160,3 +160,48 @@ def parse_colombier_pdf(raw_text: str) -> Optional[ColombierBooking]:
         price=price,
         gross_weight=gross_weight,
     )
+
+
+def parse_colombier_pdf_vision(pdf_bytes: bytes, ai_client) -> Optional[ColombierBooking]:
+    """
+    Fallback parser for scanned Colombier PDFs using GPT-4o vision.
+    """
+    data = ai_client.extract_colombier_scanned(pdf_bytes)
+    if not data:
+        logger.warning("Colombier vision: no data extracted")
+        return None
+
+    load_number = str(data.get("load_number", "")).strip()
+    if not load_number:
+        logger.warning("Colombier vision: no load number extracted")
+        return None
+
+    ship_date = _convert_date_short(str(data.get("ship_date", "")).strip())
+
+    delivery_note = str(data.get("delivery_note", "")).strip()
+    delivery_date = ship_date
+    delivery_time = ""
+    if delivery_note:
+        m = _DEL_DATE_RE.search(delivery_note)
+        if m:
+            delivery_date = _convert_date_partial(m.group(1))
+            delivery_time = _normalise_time(m.group(2))
+
+    freight = str(data.get("total_freight", "0")).strip()
+    price = f"£{freight}" if freight and freight != "0" else ""
+
+    logger.info(
+        "Colombier vision: load=%s deliver=%s postcode=%s date=%s",
+        load_number, data.get("delivery_company", ""), data.get("delivery_postcode", ""), delivery_date,
+    )
+    return ColombierBooking(
+        load_number=load_number,
+        ship_date=ship_date,
+        delivery_date=delivery_date,
+        delivery_time=delivery_time,
+        delivery_company=str(data.get("delivery_company", "")).strip(),
+        delivery_postcode=str(data.get("delivery_postcode", "")).strip(),
+        po_number=str(data.get("po_number", "")).strip(),
+        price=price,
+        gross_weight="",
+    )

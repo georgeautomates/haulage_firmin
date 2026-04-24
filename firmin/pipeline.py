@@ -18,7 +18,7 @@ from firmin.clients.incontrast_pdf import parse_incontrast_pdf
 from firmin.clients.scan_global_pdf import parse_scan_global_header
 from firmin.clients.sig_roofing_pdf import parse_sig_roofing_pdf, _first_line
 from firmin.clients.cct_worldwide_pdf import parse_cct_worldwide_pdf
-from firmin.clients.colombier_pdf import parse_colombier_pdf
+from firmin.clients.colombier_pdf import parse_colombier_pdf, parse_colombier_pdf_vision
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -257,6 +257,9 @@ class Pipeline:
                     logger.debug("CCT Worldwide: skipped attachment %s (non-Firmin or no reference)", attachment["filename"])
             elif profile.parser == "colombier":
                 booking = parse_colombier_pdf(pdf_result.raw_text)
+                if not booking:
+                    logger.info("Colombier text parser empty — trying vision for %s", attachment["filename"])
+                    booking = parse_colombier_pdf_vision(attachment["data"], self.ai)
                 if booking:
                     result.total_jobs += 1
                     order_result = self._process_colombier_booking(

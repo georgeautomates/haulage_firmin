@@ -263,6 +263,30 @@ class DualExtractionResult:
     agreement_score: int                 # 0-100 percentage of fields that agree
 
 
+_COLOMBIER_VISION_PROMPT = """\
+You are extracting delivery information from a scanned Colombier (UK) Ltd Routing Report PDF.
+
+Extract the following fields and return ONLY valid JSON (no markdown):
+{
+  "load_number": "66934",
+  "ship_date": "13/04/26",
+  "delivery_company": "Albert Browne Ltd",
+  "delivery_postcode": "LE7 1PF",
+  "po_number": "PO 42352",
+  "total_freight": "522",
+  "delivery_note": "del Mon 20/4 @ 8am"
+}
+
+Rules:
+- load_number: the number after "Load #"
+- ship_date: the date after "Ship Date:" in DD/MM/YY format
+- delivery_company: the consignee company name (first line under the BOL# number)
+- delivery_postcode: UK postcode from the delivery address
+- po_number: the PO# value (e.g. "PO 42352"), empty string if not present
+- total_freight: the numeric value after "Total Freight =" as a string (use "0" if zero)
+- delivery_note: the freetext instruction at the bottom (e.g. "del Mon 20/4 @ 8am"), empty if none
+"""
+
 _EUROCOILS_VISION_PROMPT = """\
 You are extracting delivery information from scanned Eurocoils PDF documents.
 
@@ -400,6 +424,48 @@ class AiClient:
         except Exception as e:
             logger.error("Eurocoils vision extraction failed: %s", e)
             return []
+
+
+    def extract_colombier_scanned(self, pdf_bytes: bytes) -> Optional[dict]:
+        """
+        Extract Colombier Routing Report data from a scanned PDF using GPT-4o vision.
+        Returns a dict or None on failure.
+        """
+        import base64
+        import fitz
+
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            images_b64 = []
+            for i in range(len(doc)):
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(2, 2))
+                images_b64.append(base64.b64encode(pix.tobytes("png")).decode())
+            doc.close()
+        except Exception as e:
+            logger.error("Colombier vision: failed to render PDF: %s", e)
+            return None
+
+        content = [{"type": "text", "text": _COLOMBIER_VISION_PROMPT}]
+        for img_b64 in images_b64:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{img_b64}", "detail": "high"},
+            })
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.primary_model,
+                messages=[{"role": "user", "content": content}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content or ""
+            clean = re.sub(r"```json|```", "", raw).strip()
+            data = json.loads(clean)
+            logger.info("Colombier vision extracted load=%s", data.get("load_number", "?"))
+            return data
+        except Exception as e:
+            logger.error("Colombier vision extraction failed: %s", e)
+            return None
 
 
 def _parse_response(content: str, job_number: str) -> Optional[AiExtractionResult]:
