@@ -16,6 +16,7 @@ from firmin.clients.community_playthings_pdf import parse_community_playthings_p
 from firmin.clients.eurocoils_pdf import parse_eurocoils_pdf, parse_eurocoils_pdf_vision
 from firmin.clients.incontrast_pdf import parse_incontrast_pdf
 from firmin.clients.scan_global_pdf import parse_scan_global_header
+from firmin.clients.sig_roofing_pdf import parse_sig_roofing_pdf, _first_line
 from firmin.clients.gmail import EmailMessage
 from firmin.profiles.loader import ClientProfile
 from firmin.scoring import score_order
@@ -102,7 +103,7 @@ class Pipeline:
             logger.info("Processing attachment: %s", attachment["filename"])
             pdf_result = extract_pdf(attachment["data"])
 
-            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim", "community_playthings", "eurocoils", "incontrast", "scan_global")
+            custom_parser = profile.parser in ("unipet_manifest", "revolution_beauty", "aim", "community_playthings", "eurocoils", "incontrast", "scan_global", "sig_roofing")
             if not pdf_result.job_numbers and not custom_parser:
                 logger.warning("No job numbers found in %s", attachment["filename"])
                 continue
@@ -222,6 +223,21 @@ class Pipeline:
                         result.orders.append(order_result)
                 else:
                     logger.warning("InContrast parser returned nothing for %s", attachment["filename"])
+            elif profile.parser == "sig_roofing":
+                booking = parse_sig_roofing_pdf(pdf_result.raw_text)
+                if booking:
+                    result.total_jobs += 1
+                    order_result = self._process_sig_roofing_booking(
+                        booking=booking,
+                        message_id=email.message_id,
+                        profile=profile,
+                        pdf_url=pdf_url,
+                        email_subject=email.subject,
+                        email_body=email.body,
+                    )
+                    result.orders.append(order_result)
+                else:
+                    logger.warning("SIG Roofing parser returned nothing for %s", attachment["filename"])
             elif profile.parser == "scan_global":
                 booking = parse_scan_global_header(pdf_result.raw_text, filename=attachment["filename"])
                 if booking:
@@ -767,6 +783,97 @@ class Pipeline:
                 written_to_sheet=False, skipped_duplicate=False, error=str(e),
                 collection_point=collection_point, delivery_point=delivery_point,
                 price="—", order_number=booking.order_number, failure_reasons=scored.failure_reasons,
+            )
+
+    def _process_sig_roofing_booking(self, booking, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
+        job_number = booking.order_number
+
+        if self.dedup.order_seen(job_number):
+            logger.info("Skipping duplicate SIG Roofing order: %s", job_number)
+            return OrderResult(job_number=job_number, status="SKIPPED", composite_score=0, written_to_sheet=False, skipped_duplicate=True)
+
+        client_name = profile.defaults.get("client_name", "Roofing Centre Group Ltd")
+        conditional_locations = getattr(profile, "conditional_locations", {})
+
+        collection_point = profile.known_locations.get(booking.collection_postcode, "")
+        if not collection_point:
+            collection_point = self.supabase.lookup_location(
+                postcode=booking.collection_postcode,
+                org_name=_first_line(booking.collection_address),
+                search=_first_line(booking.collection_address),
+                known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
+                client_name=client_name,
+                pdf_address=booking.collection_address,
+            ) or booking.collection_postcode or "UNMATCHED"
+
+        delivery_point = profile.known_locations.get(booking.delivery_postcode, "")
+        if not delivery_point:
+            delivery_point = self.supabase.lookup_location(
+                postcode=booking.delivery_postcode,
+                org_name=_first_line(booking.delivery_address),
+                search=_first_line(booking.delivery_address),
+                known_locations=profile.known_locations,
+                conditional_locations=conditional_locations,
+                client_name=client_name,
+                pdf_address=booking.delivery_address,
+            ) or booking.delivery_postcode or "UNMATCHED"
+
+        now = datetime.now(timezone.utc).isoformat()
+        order = {
+            **profile.defaults,
+            "client_name": client_name,
+            "job_number": job_number,
+            "delivery_order_number": job_number,
+            "order_number": job_number,
+            "po_number": job_number,
+            "customer_ref": booking.customer_ref,
+            "collection_point": collection_point,
+            "collection_postcode": booking.collection_postcode,
+            "collection_date": booking.order_date,
+            "collection_time": "09:00",
+            "delivery_point": delivery_point,
+            "delivery_postcode": booking.delivery_postcode,
+            "delivery_date": booking.delivery_date,
+            "delivery_time": "09:00",
+            "pallets": booking.pallets,
+            "spaces": booking.pallets,
+            "weight": "",
+            "price": booking.price,
+            "rate": booking.price,
+            "work_type": "",
+            "processed_at": now,
+            "message_id": message_id,
+            "pdf_url": pdf_url,
+            "email_subject": email_subject,
+            "email_body": email_body,
+            " goods_type": profile.defaults.get("goods_type", ""),
+        }
+
+        scored = score_order(order)
+        order["composite_score"] = scored.composite_score
+        order["Composite_score"] = scored.composite_score
+        order["status"] = scored.status
+        order["Status"] = scored.status
+
+        self.dedup.mark_order_seen(job_number, message_id)
+
+        try:
+            self.sheets.append_row(profile.sheets.spreadsheet_id, profile.sheets.worksheet_name, order)
+            logger.info("SIG Roofing order %s written — %s (score: %d)", job_number, scored.status, scored.composite_score)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=True, skipped_duplicate=False,
+                collection_point=collection_point, delivery_point=delivery_point,
+                price=booking.price or "—", failure_reasons=scored.failure_reasons,
+            )
+        except Exception as e:
+            logger.error("SHEET WRITE FAILED for SIG Roofing order %s: %s", job_number, e)
+            return OrderResult(
+                job_number=job_number, status=scored.status, composite_score=scored.composite_score,
+                written_to_sheet=False, skipped_duplicate=False, error=str(e),
+                collection_point=collection_point, delivery_point=delivery_point,
+                price=booking.price or "—", failure_reasons=scored.failure_reasons,
             )
 
     def _process_scan_global_booking(self, booking, raw_text: str, message_id: str, profile: ClientProfile, pdf_url: str = "", email_subject: str = "", email_body: str = "") -> OrderResult:
