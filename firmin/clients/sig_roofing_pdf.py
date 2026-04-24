@@ -24,6 +24,7 @@ from firmin.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_FILENAME_RE      = re.compile(r'-\s*(\d{10})\b')   # ME9 7NU - 3101400951.pdf
 _DOC_NO_RE        = re.compile(r'Document\s+Number\s+(\d+/\d+)', re.IGNORECASE)
 _ORDER_NO_RE      = re.compile(r'Order\s+Number\s+(\d{7,12})\b', re.IGNORECASE)
 _ORDER_DATE_RE    = re.compile(r'Order\s+Date:\s+(\d{2}/\d{2}/\d{4})', re.IGNORECASE)
@@ -73,23 +74,40 @@ def _first_line(text: str) -> str:
     return ""
 
 
-def parse_sig_roofing_pdf(raw_text: str) -> Optional[SigRoofingBooking]:
+def _order_to_doc_number(order_number: str) -> str:
+    """Convert 3101400951 → 3101/00400951 (Proteo Load Number format)."""
+    if len(order_number) == 10:
+        return f"{order_number[:4]}/00{order_number[4:]}"
+    return order_number
+
+
+def parse_sig_roofing_pdf(raw_text: str, filename: str = "") -> Optional[SigRoofingBooking]:
     """
     Parse a SIG Roofing Haulier Order PDF.
     Returns None if Order Number cannot be found.
     """
     text = re.sub(r'\r\n|\r', '\n', raw_text)
 
-    # Prefer Document Number (e.g. 3101/00400951) — matches Proteo Load Number
-    m = _DOC_NO_RE.search(text)
-    if m:
-        order_number = m.group(1)
-    else:
+    # Primary: extract 10-digit order number from filename, derive Document Number
+    order_number = ""
+    if filename:
+        m = _FILENAME_RE.search(filename)
+        if m:
+            order_number = _order_to_doc_number(m.group(1))
+
+    # Fallback: scan PDF text
+    if not order_number:
+        m = _DOC_NO_RE.search(text)
+        if m:
+            order_number = m.group(1)
+    if not order_number:
         m = _ORDER_NO_RE.search(text)
-        if not m:
-            logger.warning("SIG Roofing: Order Number not found in PDF")
-            return None
-        order_number = m.group(1)
+        if m:
+            order_number = _order_to_doc_number(m.group(1))
+
+    if not order_number:
+        logger.warning("SIG Roofing: Order Number not found in '%s'", filename)
+        return None
 
     order_date = ""
     m = _ORDER_DATE_RE.search(text)

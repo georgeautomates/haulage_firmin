@@ -224,7 +224,7 @@ class Pipeline:
                 else:
                     logger.warning("InContrast parser returned nothing for %s", attachment["filename"])
             elif profile.parser == "sig_roofing":
-                booking = parse_sig_roofing_pdf(pdf_result.raw_text)
+                booking = parse_sig_roofing_pdf(pdf_result.raw_text, filename=attachment["filename"])
                 if booking:
                     result.total_jobs += 1
                     order_result = self._process_sig_roofing_booking(
