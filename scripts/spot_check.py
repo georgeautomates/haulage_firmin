@@ -54,7 +54,7 @@ SPOT_CHECK_PROMPT = """\
 You are a quality-control assistant for a UK road haulage company.
 
 An automated system received a booking email and extracted order details from the PDF attachment.
-Your job is to verify that the extracted data is consistent with what the email says.
+Your job is to check whether the extracted client and job number are plausible given the email.
 
 --- EMAIL ---
 Subject: {email_subject}
@@ -72,23 +72,27 @@ Price:            {price}
 Order Number:     {order_number}
 
 --- TASK ---
-Check whether the extracted order is consistent with the email above.
+IMPORTANT CONTEXT: These emails are forwarding chains. The email subject is often a
+short conversational thread title (e.g. "add on lidl luton for tomorrow") that does NOT
+describe every job in the PDF attachment — the attachment may contain many different jobs.
+Do NOT flag an order just because the email subject mentions a different location or client.
 
-Focus on:
-1. Does the job number in the email match the extracted job number?
-2. Does the client / sender domain in the subject match the client name?
-3. Do the collection/delivery locations mentioned in the email match the extracted points?
-4. Do the dates or prices mentioned in the email (if any) match the extraction?
+Only FLAG if you find a clear, specific contradiction:
+1. The sender domain in the subject (e.g. @dssmith.com, revolutionbeauty.com, unipet.co.uk)
+   does NOT match the extracted client name. This is the strongest signal.
+2. A specific job number is mentioned in the email body and it clearly does NOT match the
+   extracted job number.
+3. Any other specific, concrete evidence of a wrong extraction (not just a vague mismatch
+   between the thread subject and the order details).
 
-Important: The email body is often a forwarding chain — look at the most recent message.
-The subject line typically contains the sender domain (e.g. @dssmith.com, revolutionbeauty.com).
-If the email body is empty or very short, base your verdict only on the subject line.
+If the sender domain matches the client, PASS — the subject line content alone is not
+a reason to FLAG.
 
 Return ONLY this JSON with no markdown, no explanation:
 {{
   "result": "PASS" or "FLAG",
   "confidence": "HIGH", "MEDIUM", or "LOW",
-  "reason": "one sentence — what specifically supports or undermines the extraction"
+  "reason": "one sentence — cite the specific evidence for your verdict"
 }}
 """
 
@@ -216,8 +220,8 @@ def main():
         confidence = verdict["confidence"]
         reason = verdict["reason"]
 
-        symbol = "✓" if result == "PASS" else "✗"
-        print(f"  [{i}/{len(to_check)}] {job} — {symbol} {result} ({confidence}) — {reason}")
+        symbol = "PASS" if result == "PASS" else "FLAG"
+        print(f"  [{i}/{len(to_check)}] {job} - {symbol} ({confidence}) - {reason}")
 
         if result == "PASS":
             passed += 1
