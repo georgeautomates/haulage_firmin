@@ -63,6 +63,9 @@ FIELD_MAP = {
     "rate":                  "price",
     "pallets":               "pallets",
     "spaces":                "spaces",
+    "booking_window":        "booking_window",
+    "traffic_note":          "traffic_note",
+    "customer_ref":          "customer_ref",
 }
 
 
@@ -103,15 +106,50 @@ def fetch_all_orders(gc: gspread.Client) -> list[dict]:
 
 
 def fetch_already_done(gc: gspread.Client) -> set[str]:
-    """Return job numbers already in RPA Entry sheet."""
+    """Return job numbers that succeeded in RPA Entry sheet (success=TRUE)."""
     try:
         ws = gc.open_by_key(SPREADSHEET_ID).worksheet(RPA_ENTRY_WS)
         headers = ws.row_values(1)
         if "job_number" not in headers:
             return set()
-        col_idx = headers.index("job_number")
-        values = ws.col_values(col_idx + 1)[1:]
-        return {str(v).strip() for v in values if v}
+        job_col = headers.index("job_number")
+        success_col = headers.index("success") if "success" in headers else -1
+        all_rows = ws.get_all_values()[1:]
+        done = set()
+        for row in all_rows:
+            job = row[job_col].strip() if job_col < len(row) else ""
+            if not job:
+                continue
+            if success_col >= 0:
+                success = row[success_col].strip().upper() if success_col < len(row) else ""
+                if success == "TRUE":
+                    done.add(job)
+            else:
+                done.add(job)
+        return done
+    except Exception:
+        return set()
+
+
+def fetch_failed_jobs(gc: gspread.Client) -> set[str]:
+    """Return job numbers that have a failed RPA entry (success=FALSE, most recent row)."""
+    try:
+        ws = gc.open_by_key(SPREADSHEET_ID).worksheet(RPA_ENTRY_WS)
+        headers = ws.row_values(1)
+        if "job_number" not in headers or "success" not in headers:
+            return set()
+        job_col = headers.index("job_number")
+        success_col = headers.index("success")
+        all_rows = ws.get_all_values()[1:]
+        # Track most recent result per job (last row wins)
+        latest: dict[str, str] = {}
+        for row in all_rows:
+            job = row[job_col].strip() if job_col < len(row) else ""
+            if not job:
+                continue
+            success = row[success_col].strip().upper() if success_col < len(row) else ""
+            latest[job] = success
+        return {job for job, success in latest.items() if success != "TRUE"}
     except Exception:
         return set()
 
@@ -128,6 +166,8 @@ def main():
                         help="Fill form + screenshot but skip sheet write")
     parser.add_argument("--ds-smith-only", action="store_true",
                         help="Skip Unipet and other non-DS-Smith jobs (safe while Unipet AJAX bug is unfixed)")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Only retry jobs that previously failed (success=FALSE in RPA Entry)")
     args = parser.parse_args()
 
     sa_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "config/service_account.json")
@@ -140,11 +180,17 @@ def main():
 
     print("Fetching already-processed jobs from RPA Entry...")
     already_done = fetch_already_done(gc)
-    print(f"  {len(already_done)} jobs already in RPA Entry")
+    print(f"  {len(already_done)} jobs successfully done in RPA Entry")
 
-    # Filter to pending jobs
-    pending = [o for o in all_orders if o["delivery_order_number"] not in already_done]
-    print(f"  {len(pending)} jobs pending RPA entry")
+    if args.retry_failed:
+        failed_jobs = fetch_failed_jobs(gc)
+        print(f"  {len(failed_jobs)} jobs with failed RPA entry — retrying these")
+        pending = [o for o in all_orders if o["delivery_order_number"] in failed_jobs]
+        print(f"  {len(pending)} pending retry jobs found in Actual Entry")
+    else:
+        # Filter to jobs not yet successfully done
+        pending = [o for o in all_orders if o["delivery_order_number"] not in already_done]
+        print(f"  {len(pending)} jobs pending RPA entry")
 
     # Optionally restrict to DS Smith only (skip Unipet while AJAX bug is unfixed)
     if args.ds_smith_only:
@@ -195,7 +241,7 @@ def main():
                 if failed:
                     print(f"  mismatched fields: {failed}")
         else:
-            summary = pipeline.process_jobs([order])
+            summary = pipeline.process_jobs([order], retry_failed=args.retry_failed)
             written  += summary["written"]
             skipped  += summary["skipped"]
             errors   += summary["errors"]

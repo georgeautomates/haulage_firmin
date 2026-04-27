@@ -186,11 +186,12 @@ class RpaEntryPipeline:
             logger.warning("Could not load RPA Entry sheet: %s", e)
             return set()
 
-    def process_jobs(self, job_orders: list[dict]) -> dict:
+    def process_jobs(self, job_orders: list[dict], retry_failed: bool = False) -> dict:
         """
         Run RPA entry for each order dict. job_orders is a list of order dicts
         with all extraction fields (collection_point, delivery_point, dates, etc.).
 
+        retry_failed: if True, re-attempt jobs that previously failed (not in _seen).
         Returns summary counts.
         """
         if not self._seen:
@@ -205,7 +206,7 @@ class RpaEntryPipeline:
             if not job_number:
                 continue
 
-            if job_number in self._seen:
+            if job_number in self._seen and not retry_failed:
                 logger.debug("RPA: skipping already-processed job %s", job_number)
                 skipped += 1
                 continue
