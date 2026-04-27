@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-04-24 (session 16)_
+_Last updated: 2026-04-27 (session 17)_
 
 ## What this project is
 
@@ -105,6 +105,57 @@ Next.js app (deployed separately) for reviewing processed orders.
 ## Current status — PRODUCTION RUNNING ON VPS
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
+
+### What's been completed this session (2026-04-27, session 17)
+
+#### Weekly brief goal: demo-ready system for top 5–10 clients
+
+**1. Manual Review system (firmin-dashboard)**
+
+New human verification layer for the Paul demo:
+- `POST /api/review` + `GET /api/review` — writes to a `Manual Review` Google Sheet tab (auto-created on first save). Service account uses full spreadsheets scope for writes.
+- `ManualReviewPanel` on order detail page (pink column, below Spot Check) — tick/cross verdict buttons, notes textarea, reviewer name field, Save button. Loads existing review on open and shows last-saved metadata.
+- `/review` page — lists all manually reviewed orders, defaults to FAIL tab (orders needing fixes), client filter + search, red/green left-border rows, click to jump to order detail.
+- Nav link added to all pages.
+- Sheet columns: `job_number`, `client_name`, `reviewed_at`, `verdict`, `notes`, `reviewed_by`. Each save appends a row; dashboard shows most recent verdict per job.
+- Bug fixed: Google Sheets rejects sheet names with spaces in range strings unless single-quoted — `'Manual Review'!A1:F5000`.
+- Bug fixed: GET was failing before tab existed — now checks tab existence first, returns empty if missing, tab created on first POST.
+
+**2. Analytics & Sanity tab (`/analytics`, firmin-dashboard)**
+
+Dedicated tab pulling from Comparison, Actual Entry, RPA Entry, Spot Check, Manual Review in one parallel fetch:
+- **Active Issues** alert bar (only shown when something is wrong): manual FAILs, RPA failures, spot flags, missing PDFs — each clickable to relevant page.
+- **Extraction Accuracy**: full match % + per-field (collection, delivery, price, order number), colour-coded green/yellow/red.
+- **Extraction Confidence**: GREEN/YELLOW/RED distribution from AI scoring on live emails.
+- **RPA Health**: success rate, failed count, no-entry count, recent failures table with error messages (clickable to order detail).
+- **Automated Spot Check** summary.
+- **Manual Review** summary + orders-needing-fix table.
+- **Data Completeness**: orders missing PDFs, missing email link, not in Proteo.
+- **Per-Client Breakdown** table: match %, RPA %, spot %, manual fails, no PDF, no RPA — red left border on rows with active issues.
+- Bug fixed: Comparison sheet stores `YES`/`NO`/`FULL` not `TRUE`/`FALSE` — `bool()` helper updated to handle all variants.
+- Analytics nav link added to all pages.
+
+**Current system stats (2026-04-27, 609 matched orders, 8 clients in Comparison):**
+- Full match: 69% (420/609)
+- Collection: 91%, Delivery: 95%, Price: 88%, Order No.: 78%
+- 182 partial, 7 mismatch
+- 52 RPA failures, 18 spot check flags, 19 missing PDFs
+- St Regis Fibre: 84% match, 99% RPA success ✓
+- St Regis Reels: 43% match — root cause: 62 order number failures (Proteo stores internal refs `1835611/1477955` instead of PO for Reels — structural, unfixable from PDF), 15 price failures, 12 collection/delivery failures
+- Eurocoils, Revolution Beauty, Unipet, Community Playthings: 0% match — no Comparison rows yet (Proteo Verification not yet matched for these clients)
+- AIM: 58% match, 0% RPA success — RPA broken for AIM
+- 350 orders in Actual Entry with no Comparison match (newer clients not yet in Verification)
+
+**3. RPA improvements (firmin agent)**
+
+- `backfill_rpa_entry.py` FIELD_MAP now includes `booking_window`, `traffic_note`, `customer_ref` — these are read from Actual Entry and passed to `enter_order()` so Proteo's traffic notes field is populated on backfill runs.
+- `fetch_already_done()` now checks `success=TRUE` specifically (not just presence in sheet).
+- `fetch_failed_jobs()` — new helper returning jobs where most recent RPA row has `success=FALSE`.
+- `--retry-failed` flag added — only processes jobs that previously failed.
+  - Usage: `python scripts/backfill_rpa_entry.py --retry-failed --limit 25 --delay 15`
+- `RpaEntryPipeline.process_jobs()` accepts `retry_failed=True` to skip the `_seen` check.
+
+**Note: VPS not yet updated this session** — needs `git pull && systemctl restart firmin` to activate RPA field changes for live emails.
 
 ### What's been completed this session (2026-04-24, session 16)
 
@@ -644,13 +695,19 @@ LOG_LEVEL=INFO
 - **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
 - **Multi-client expansion** — 12 clients live ✅: St Regis Fibre, St Regis Reels, Unipet, Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon, Roofing Centre, CCT Worldwide, Colombier. Goal: 15+ by end of April. Horizon collection point known_locations pending (ME20 7NA → Scan Global name TBD).
-- **Spot check 15 flagged orders** — need investigation to determine if genuine extraction errors or false positives
-- **Playwright RPA auto-entry** — RPA backfill ~399 DS Smith jobs still pending. Unipet RPA blocked by AJAX overlay bug (Telerik multi-item dropdown triggers reload). `--ds-smith-only` flag added to backfill script as workaround.
+- **Spot check flagged orders** — 18 flagged as of session 17, need investigation (genuine errors vs false positives)
+- **RPA backfill** — 52 failed jobs need retry (`python scripts/backfill_rpa_entry.py --retry-failed --limit 25 --delay 15`). DS Smith backfill still has ~299 jobs with no RPA entry. Unipet RPA blocked by AJAX overlay bug.
+- **AIM RPA** — 0% success rate, needs investigation.
+- **St Regis Reels match rate** — 43% (62/124 order number failures are structural: Proteo stores internal refs not PO numbers for Reels jobs; 15 price failures and 12 collection/delivery failures are fixable via aliases).
+- **350 orders not in Comparison** — newer clients (InContrast 76, Unipet 46, Reels 38, AIM 29, Revolution Beauty 18, Colombier 13, Horizon 12, Roofing Centre 11, CCT 11, Eurocoils 7) have Actual Entry rows but no Proteo Verification match yet. Verification backfill timer will catch these over time.
+- **VPS not updated session 17** — needs `git pull && systemctl restart firmin` to activate RPA booking_window/traffic_note/customer_ref fields for live emails.
+- **Alias review** — daily task: review partial mismatches in Comparison tab, add missing aliases to `run_comparison.py` and `lib/aliases.ts`.
+- **Manual Review workflow** — team should review 5 orders per top client per day using the new Manual Review panel, log FAILs with notes.
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
 - **`customer_profiles` Supabase table** — defined in spec but not used in code yet
 - **`location_mappings` human review UI** — unverified cache entries accumulate but no workflow to review/verify them
 - **Verification retry tracking** — "not found" jobs are re-attempted by the twice-daily timer indefinitely; no cutoff for permanently cancelled/amended jobs yet (low priority)
-- **Dashboard deployment** — firmin-dashboard is running locally; not yet deployed to a public URL
+- **Dashboard deployment** — firmin-dashboard deployed on Vercel (auto-deploys from georgeautomates GitHub commits). Not yet on a custom domain.
 - **Drive folder ID on VPS** — ✅ DONE. `DRIVE_FOLDER_ID=1bM-ksJynQjABdLazYAHshvH8_xie5urP` set in `/opt/firmin/.env`
 - **Drive upload quota fix** — ✅ DONE (session 10). Switched from service account to OAuth user credentials. 78 historical rows backfilled.
 - **Proteo JS syntax error** — ✅ DONE (session 10). Python ternary in JS string fixed.
