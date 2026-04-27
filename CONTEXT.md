@@ -1,5 +1,5 @@
 # Firmin — Session Context
-_Last updated: 2026-04-27 (session 17)_
+_Last updated: 2026-04-28 (session 18)_
 
 ## What this project is
 
@@ -106,6 +106,27 @@ Next.js app (deployed separately) for reviewing processed orders.
 
 The agent is deployed on Hostinger VPS (`72.61.202.184`, Ubuntu 24.04) and running as a systemd service. It starts on boot and restarts on failure.
 
+### What's been completed this session (2026-04-28, session 18)
+
+#### Manual Review — Failure Reason Dropdown + Breakdown Chart (firmin-dashboard)
+
+George requested structured failure tracking: a reason dropdown on the FAIL verdict + a breakdown chart on the `/review` page.
+
+**Changes made:**
+- `ReviewRow` type gains `reason` field; sheet header updated from 6 → 7 columns (`reason` inserted between `verdict` and `notes`)
+- `FAIL_REASONS` constant: `Incorrect collection/delivery locations`, `Model mismatch`, `Order number mismatch`, `Price mismatch`, `Subject line / body mismatch`, `Other`
+- `ManualReviewPanel` (order detail page): reason dropdown appears only when FAIL is selected; required before Save is enabled; `Other` requires non-empty Additional Detail; collapsed header shows saved reason inline
+- `Notes` label renamed to `Additional detail` to avoid confusion with reason
+- `/review` page: `FailureBreakdown` bar chart above the table (counts + % per reason, colour-coded); Reason column added to table with colour-coded badges; search includes reason field
+- API: `ensureSheet` now migrates existing header row if `reason` column is missing (one-time fix for pre-existing sheets)
+- Bug fixed: sheet header was still old 6-column format — `reason` was never found on lookup, causing chart to show "Unknown" and new saves to appear broken. Fixed by header migration on next POST.
+
+**Note on "Subject line / body mismatch" reason:** George flagged this as a category to expand on in a future session — needs deeper definition of what counts as email coherence failure.
+
+**Commits pushed to georgeautomates/firmin-dashboard:** `3f96c78`, `bd3d4da`, `7a2e3c1`
+
+---
+
 ### What's been completed this session (2026-04-27, session 17)
 
 #### Weekly brief goal: demo-ready system for top 5–10 clients
@@ -155,7 +176,7 @@ Dedicated tab pulling from Comparison, Actual Entry, RPA Entry, Spot Check, Manu
   - Usage: `python scripts/backfill_rpa_entry.py --retry-failed --limit 25 --delay 15`
 - `RpaEntryPipeline.process_jobs()` accepts `retry_failed=True` to skip the `_seen` check.
 
-**Note: VPS not yet updated this session** — needs `git pull && systemctl restart firmin` to activate RPA field changes for live emails.
+**VPS updated 2026-04-27** — `git pull && systemctl restart firmin` done. RPA booking_window/traffic_note/customer_ref fields now active for live emails.
 
 ### What's been completed this session (2026-04-24, session 16)
 
@@ -695,12 +716,13 @@ LOG_LEVEL=INFO
 - **Proteo scraper junk rows** — RESOLVED (session 6 full fix). Now validates order_id ≥ 5 digits AND client_name matches St Regis/DS Smith. 14 junk rows cleaned (wrong-client + pagination rows).
 - **Comparison normalisations** — added: VPK/Encase Banbury, Majestic/Onboard Wolverhampton, Cepac Rotherham, Angleboard Dudley, Suez Huddersfield variants, RCP Procurement/Shotton Mill.
 - **Multi-client expansion** — 12 clients live ✅: St Regis Fibre, St Regis Reels, Unipet, Revolution Beauty, AIM, Community Playthings, Eurocoils, InContrast, Horizon, Roofing Centre, CCT Worldwide, Colombier. Goal: 15+ by end of April. Horizon collection point known_locations pending (ME20 7NA → Scan Global name TBD).
+- **"Subject line / body mismatch" reason** — George wants to expand on this category in a future session. Currently a single dropdown option; needs deeper definition of what counts as an email coherence failure (e.g. subject references different job than body, order number in subject doesn't match extracted order, etc.)
 - **Spot check flagged orders** — 18 flagged as of session 17, need investigation (genuine errors vs false positives)
 - **RPA backfill** — 52 failed jobs need retry (`python scripts/backfill_rpa_entry.py --retry-failed --limit 25 --delay 15`). DS Smith backfill still has ~299 jobs with no RPA entry. Unipet RPA blocked by AJAX overlay bug.
 - **AIM RPA** — 0% success rate, needs investigation.
 - **St Regis Reels match rate** — 43% (62/124 order number failures are structural: Proteo stores internal refs not PO numbers for Reels jobs; 15 price failures and 12 collection/delivery failures are fixable via aliases).
 - **350 orders not in Comparison** — newer clients (InContrast 76, Unipet 46, Reels 38, AIM 29, Revolution Beauty 18, Colombier 13, Horizon 12, Roofing Centre 11, CCT 11, Eurocoils 7) have Actual Entry rows but no Proteo Verification match yet. Verification backfill timer will catch these over time.
-- **VPS not updated session 17** — needs `git pull && systemctl restart firmin` to activate RPA booking_window/traffic_note/customer_ref fields for live emails.
+- **VPS updated session 17** ✅ — `git pull && systemctl restart firmin` done 2026-04-27.
 - **Alias review** — daily task: review partial mismatches in Comparison tab, add missing aliases to `run_comparison.py` and `lib/aliases.ts`.
 - **Manual Review workflow** — team should review 5 orders per top client per day using the new Manual Review panel, log FAILs with notes.
 - **Verification scrape** — ✅ DONE (session 5). Python Playwright replaces n8n/SSH/JS. Runs automatically after each email.
