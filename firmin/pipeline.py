@@ -115,7 +115,8 @@ class Pipeline:
                 len(pdf_result.job_numbers), attachment["filename"]
             )
             if not custom_parser:
-                result.total_jobs += len(pdf_result.job_numbers)
+                new_count = sum(1 for j in pdf_result.job_numbers if not self.dedup.order_seen(j))
+                result.total_jobs += new_count
 
             # Upload PDF to Drive (once per attachment)
             pdf_url = ""
@@ -290,7 +291,14 @@ class Pipeline:
                 else:
                     logger.warning("Scan Global parser returned nothing for %s", attachment["filename"])
             else:
-                for job_number in pdf_result.job_numbers:
+                new_job_numbers = [j for j in pdf_result.job_numbers if not self.dedup.order_seen(j)]
+                skipped_count = len(pdf_result.job_numbers) - len(new_job_numbers)
+                if skipped_count:
+                    logger.info(
+                        "Pre-dedup: skipping %d already-seen job(s) from %s, processing %d new",
+                        skipped_count, attachment["filename"], len(new_job_numbers),
+                    )
+                for job_number in new_job_numbers:
                     order_result = self._process_job(
                         job_number=job_number,
                         raw_text=pdf_result.raw_text,
